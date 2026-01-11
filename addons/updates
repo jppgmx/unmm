@@ -1,0 +1,24 @@
+ADDON_NAME="updates"
+ADDON_DISPLAY_NAME="System Updates"
+ADDON_VERSION="1.0.0"
+ADDON_DESCRIPTION="Atualiza o sistema operacional no momento de boot."
+
+#
+#   Parâmetros de um Add-on:
+#
+#   ADDON_INSTALL_ARG_MOUNTPOINT        - ponto de montagem do sistema de arquivos raiz
+#   ADDON_INSTALL_ARG_HOSTNAME          - nome do host da instalação
+#   ADDON_INSTALL_ARG_USERNAME          - nome do usuário padrão
+#   ADDON_INSTALL_ARG_PASSWORD          - senha do usuário padrão
+#   ADDON_INSTALL_ARG_DEVICE            - dispositivo de disco alvo
+#   ADDON_INSTALL_ARG_BOOTMODE          - modo de boot (bios, uefi ou hybrid)
+#   ADDON_INSTALL_ARG_DISKIMAGEPATH     - caminho do arquivo de imagem de disco
+#   ADDON_INSTALL_ARG_SIZE              - tamanho do disco em GB
+#   ADDON_INSTALL_ARG_INSTALLED_CATALOG - catálogo instalado pela CLI
+#
+addon_install() {
+    log_info "Atualizando o sistema operacional..."
+    chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get update
+    chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get upgrade -y
+    log_info "Sistema atualizado com sucesso."
+}

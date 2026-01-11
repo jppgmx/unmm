@@ -1,0 +1,14 @@
+[Unit]
+Description=First Boot Setup (Self-Destructing)
+ConditionPathExists=/opt/firstboot.d
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/firstboot-manager.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
