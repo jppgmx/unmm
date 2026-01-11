@@ -1,6 +1,6 @@
 # UNMM - Ubuntu Noble Minimal Maker
 
-**UNMM** é uma ferramenta automatizada de linha de comando projetada para criar imagens personalizadas e mínimas do **Ubuntu 24.04 LTS (Noble Numbat)**. Ele utiliza uma abordagem modular baseada em **CatáLogos** e **Add-ons**, permitindo que você construa desde sistemas servidores ultra-leves até ambientes desktop funcionais, exportando tanto para imagens de disco bruto (RAW) quanto para Virtual Appliances (OVA) compatíveis com VMware e VirtualBox.
+**UNMM** é uma ferramenta automatizada de linha de comando projetada para criar imagens personalizadas e mínimas do **Ubuntu 24.04 LTS (Noble Numbat)**. Ele utiliza uma abordagem modular baseada em **Catálogos** e **Add-ons**, permitindo que você construa desde sistemas servidores ultra-leves até ambientes desktop funcionais, exportando tanto para imagens de disco bruto (RAW) quanto para Virtual Appliances (OVA) compatíveis com VMware e VirtualBox.
 
 ## Funcionalidades
 
@@ -196,3 +196,4 @@ addon_install() {
 Este projeto é distribuído sob a licença MIT. Consulte o arquivo `LICENSE` para mais detalhes.
 
 Copyright © 2026 João Paulo (Jppgmx)
+
