@@ -1,0 +1,293 @@
+#!/bin/bash
+
+CATALOG_NAME="base"
+CATALOG_DISPLAY_NAME="Base Catalog"
+CATALOG_VERSION="1.0.0"
+CATALOG_DESCRIPTION="Base de todo o catálogo."
+CATALOG_PREFFERED_SIZE="4G"
+
+_SYSTEM_PACKAGES_ESSENTIALS=(
+    "linux-image-generic" "linux-firmware" "initramfs-tools" "zstd"
+    "netplan.io" "systemd-resolved"
+    "locales" "console-setup"
+    "sudo" "nano" "bash-completion"
+    "software-properties-common" "ca-certificates" "wget" "gnupg"
+    "haveged"
+)
+_SYSTEM_ARCHITECTURE_SUPPORTED="amd64"
+_SYSTEM_UBUNTU_MIRROR="http://archive.ubuntu.com/ubuntu"
+_SYSTEM_UBUNTU_CODENAME="noble"
+_SYSTEM_PREFERRED_SWAP_SIZE="2G"
+_SYSTEM_UBUNTU_SOURCES_LIST=(
+    "deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse"
+    "deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse"
+    "deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse"
+)
+_SYSTEM_DEBCONF_DEFAULTS=(
+    "locales locales/default_environment_locale select pt_BR.UTF-8"
+    "locales locales/locales_to_be_generated multiselect pt_BR.UTF-8 UTF-8"
+    "console-setup console-setup/layoutcode select br"
+    "console-setup console-setup/modelcode string pc105"
+    "console-setup console-setup/variantcode string "
+    "console-setup console-setup/charmap47 select UTF-8"
+)
+
+_write_ubuntu_sources_list() {
+    local mountpoint="$1"
+    local sources_list_path="$mountpoint/etc/apt/sources.list"
+
+    rm -f "$sources_list_path"
+    for source in "${_SYSTEM_UBUNTU_SOURCES_LIST[@]}"; do
+        log_verbose "Adicionando repositório ao sources.list: $source"
+        echo "$source" >> "$sources_list_path"
+    done
+}
+
+# _write_swapfile <mountpoint> <size>
+_write_swapfile() {
+    local mountpoint="$1"
+    local size="$2"
+    local swapfile_path="$mountpoint/swapfile"
+
+    log_info "Criando swapfile de tamanho $size em $swapfile_path"
+    chroot_call_logged "$mountpoint" fallocate -l "$size" /swapfile
+    chroot_call_logged "$mountpoint" chmod 600 /swapfile
+    chroot_call_logged "$mountpoint" mkswap /swapfile
+    chroot_call_logged "$mountpoint" swapon /swapfile
+
+    log_info "Adicionando swapfile ao fstab..."
+    echo '/swapfile none swap sw 0 0' >> "$mountpoint/etc/fstab"
+}
+
+# _write_fstab_file <mountpoint>
+_write_fstab_file() {
+    local mountpoint="$1"
+    local fstab_path="$mountpoint/etc/fstab"
+
+    log_info "Escrevendo arquivo fstab em $fstab_path"
+    local fstab_lines=(
+        "# /etc/fstab: static file system information."
+        "# Gerado por UNMM. Não edite manualmente (a menos se for necessário)."
+        "# <file system> <mount point>   <type>  <options>       <dump>  <pass>"
+    )
+
+    rm -f "$fstab_path"
+    
+    local schema=$(diskpart_get_disk_partition_schema "$CATALOG_INSTALL_ARG_DEVICE")
+    local partitions=$(diskpart_get_partitions "$CATALOG_INSTALL_ARG_DEVICE")
+
+    local system_partition="${CATALOG_INSTALL_ARG_DEVICE}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
+    local system_uuid=$(blkid -s UUID -o value "$system_partition")
+
+    fstab_lines+=("UUID=$system_uuid / ext4 defaults 0 1")
+
+    if [[ "$schema" == "gpt" ]]; then
+        local efi_partition="${CATALOG_INSTALL_ARG_DEVICE}p$(echo "$partitions" | grep esp | cut -d';' -f1 | cut -d'=' -f2)"
+        local efi_uuid=$(blkid -s UUID -o value "$efi_partition")
+
+        fstab_lines+=("UUID=$efi_uuid /boot/efi vfat defaults 0 1")
+    fi
+
+    for line in "${fstab_lines[@]}"; do
+        log_verbose "Escrevendo linha no fstab: $line"
+        echo "$line" >> "$fstab_path"
+    done
+}
+
+_set_hostname() {
+    local mountpoint="$1"
+    local hostname="$2"
+
+    log_info "Configurando hostname para '$hostname' em $mountpoint/etc/hostname"
+    echo "$hostname" > "$mountpoint/etc/hostname"
+
+    log_info "Atualizando arquivo /etc/hosts..."
+    cat > "$mountpoint/etc/hosts" <<EOF
+127.0.0.1 localhost
+127.0.1.1 $hostname
+EOF
+}
+
+_link_resolv_conf() {
+    local mountpoint="$1"
+
+    log_info "Configurando link simbólico para /etc/resolv.conf..."
+    chroot_call_logged "$mountpoint" ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+    chroot_call_logged "$mountpoint" systemctl enable systemd-resolved
+}
+
+_configure_netplan_default() {
+    local mountpoint="$1"
+
+    log_info "Configurando netplan para conexão DHCP padrão..."
+    cat > "$mountpoint/etc/netplan/01-netcfg.yaml" <<EOF
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      dhcp4: true
+EOF
+}
+
+# _configure_user <mountpoint> <username> <password>
+_configure_user() {
+    local mountpoint="$1"
+    local username="$2"
+    local password="$3"
+
+    log_info "Criando usuário '$username' com privilégios sudo..."
+    chroot_call_logged "$mountpoint" useradd -m -s /bin/bash -G sudo "$username"
+    echo "$username:$password" | chroot_call_logged "$mountpoint" "chpasswd"
+    echo "root:root" | chroot_call_logged "$mountpoint" "chpasswd"
+}
+
+_grub_install() {
+    local mountpoint="$1"
+    local device="$2"
+    
+    local grub_packages=()
+    local grub_target=""
+    local grub_command=""
+
+    log_info "Determinando esquema de partição para instalação do GRUB..."
+    local schema=$(diskpart_get_disk_partition_schema "$device")
+    if [[ "$schema" == "gpt" ]]; then
+        grub_packages+=("grub-efi-amd64" "shim-signed")
+        grub_target="x86_64-efi"
+        grub_command="grub-install --target=$grub_target --efi-directory=/boot/efi --bootloader-id=UNMM --recheck --no-floppy $device"
+
+        if [[ $CATALOG_INSTALL_ARG_BOOTMODE == "hybrid" ]]; then
+            grub_packages+=("grub-pc")
+
+        fi
+    else
+        grub_packages+=("grub-pc")
+        grub_target="i386-pc"
+        grub_command="grub-install --target=$grub_target --recheck --no-floppy $device"
+    fi
+
+    log_verbose "Instalando pacotes do GRUB: ${grub_packages[*]}"
+    log_verbose "Alvo do GRUB: $grub_target"
+    log_verbose "Comando de instalação do GRUB: $grub_command"
+    log_info "Instalando pacotes do GRUB..."
+    if ! chroot_call_logged "$mountpoint" $APT_GET_COMMAND "${grub_packages[@]}"; then
+        log_error "Falha ao instalar pacotes do GRUB."
+        exit 1
+    fi
+
+    log_verbose "Configurando /etc/default/grub..."
+    chroot_call_logged "$mountpoint" sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
+    chroot_call_logged "$mountpoint" bash -c "echo 'GRUB_GFXMODE=1024x768' >> /etc/default/grub"
+    chroot_call_logged "$mountpoint" bash -c "echo 'GRUB_GFXPAYLOAD_LINUX=keep' >> /etc/default/grub"
+
+    log_info "Instalando GRUB no dispositivo $device..."
+    chroot_call_logged "$mountpoint" $grub_command
+
+    log_info "Gerando initramfs..."
+    chroot_call_logged "$mountpoint" update-initramfs -u -k all
+
+    log_info "Atualizando configuração do GRUB..."
+    chroot_call_logged "$mountpoint" update-grub
+}
+
+_write_startup_script() {
+    local mountpoint="$1"
+
+    log_info "Instalando script de inicialização do First Boot..."
+    local fbm_dir="$ASSETS_DIR/firstboot-manager"
+    local files=(
+        "firstboot-manager.sh:/usr/local/bin/firstboot-manager.sh"
+        "firstboot.service:/etc/systemd/system/firstboot.service"
+    )
+    for file in "${files[@]}"; do
+        IFS=":" read -r src dest <<< "$file"
+
+        log_verbose "Copiando $src para $dest"
+        cp "$fbm_dir/$src" "$mountpoint$dest"
+    done
+
+    log_verbose "Criando diretório de scripts..."
+    mkdir -p "$mountpoint/opt/firstboot.d"
+
+    log_verbose "Habilitando serviço firstboot.service..."
+    chroot_call_logged "$mountpoint" systemctl enable firstboot.service
+}
+
+_base_install() {
+    export DEBIAN_FRONTEND=noninteractive
+    log_info "Preparando instalação do catálogo $CATALOG_NAME..."
+
+    chroot_mount_system "$CATALOG_INSTALL_ARG_DEVICE" "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+
+    log_info "Instalando o mínimo pelo debootstrap..."
+    if ! exec_logged "debootstrap" debootstrap --arch="$_SYSTEM_ARCHITECTURE_SUPPORTED" --variant=minbase \
+        "$_SYSTEM_UBUNTU_CODENAME" "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_SYSTEM_UBUNTU_MIRROR"; then
+        log_error "Falha ao executar o debootstrap."
+        exit 1
+    fi
+    
+    log_info "Instalação básica do catálogo $CATALOG_NAME concluída."
+    log_info "Preparando ambiente chroot para próxima etapa..."
+
+    chroot_prepare_environment "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+    log_info "Ambiente chroot preparado."
+
+    _write_fstab_file "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+    _write_swapfile "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_SYSTEM_PREFERRED_SWAP_SIZE"
+
+    log_warning "AVISO: Algumas saídas normais do APT são imprimidas no stderr, podendo parecer que há erros quando não há."
+
+    log_info "Atualizando repositórios do sistema..."
+    log_verbose "Escrevendo sources.list personalizado..."
+    _write_ubuntu_sources_list "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+    if ! chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" apt-get update; then
+        log_error "Falha ao atualizar os repositórios do sistema."
+        exit 1
+    fi
+
+    log_verbose "Instalando debconf-utils para configuração de pacotes..."
+    if ! chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND debconf-utils; then
+        log_error "Falha ao instalar debconf-utils."
+        exit 1
+    fi
+
+    log_info "Configurando valores padrão do debconf..."
+    for debconf_entry in "${_SYSTEM_DEBCONF_DEFAULTS[@]}"; do
+        log_verbose "Configurando debconf: $debconf_entry"
+        if ! echo "$debconf_entry" | chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" "debconf-set-selections"; then
+            log_error "Falha ao configurar debconf: $debconf_entry"
+            exit 1
+        fi
+    done
+
+    log_info "Instalando pacotes essenciais do sistema..."
+    if ! chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_SYSTEM_PACKAGES_ESSENTIALS[@]}"; then
+        log_error "Falha ao instalar pacotes essenciais do sistema."
+        exit 1
+    fi
+
+    _link_resolv_conf "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+    _configure_netplan_default "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+    _set_hostname "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$CATALOG_INSTALL_ARG_HOSTNAME"
+    _configure_user "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$CATALOG_INSTALL_ARG_USERNAME" "$CATALOG_INSTALL_ARG_PASSWORD"
+    _grub_install "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$CATALOG_INSTALL_ARG_DEVICE"
+    _write_startup_script "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+
+    log_info "Instalação do catálogo $CATALOG_NAME concluída."
+}
+
+#
+#   Argumentos globais:
+#
+# CATALOG_INSTALL_ARG_DEVICE        - Dispositivo de bloco onde a imagem está montada.
+# CATALOG_INSTALL_ARG_MOUNTPOINT    - Ponto de montagem do sistema de arquivos raiz.
+# CATALOG_INSTALL_ARG_HOSTNAME      - Nome do host a ser configurado.
+# CATALOG_INSTALL_ARG_USERNAME      - Nome do usuário a ser criado.
+# CATALOG_INSTALL_ARG_PASSWORD      - Senha do usuário a ser criado.
+# CATALOG_INSTALL_ARG_BOOTMODE      - Modo de boot (bios, uefi, hybrid).
+# CATALOG_INSTALL_ARG_DISKIMAGEPATH - Caminho para a imagem de disco.
+# CATALOG_INSTALL_ARG_SIZE          - Tamanho da imagem de disco.
+#
+catalog_install() {
+    _base_install
+}

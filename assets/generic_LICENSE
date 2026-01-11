@@ -1,0 +1,73 @@
+LICENÇA DE USO
+==============
+
+Esta imagem OVA (Open Virtual Appliance) foi gerada automaticamente 
+pelo UNMM (Ubuntu Noble Minimal Maker) e é fornecida "COMO ESTÁ", 
+sem garantias de qualquer tipo.
+
+COMPONENTES E PROPRIEDADE INTELECTUAL:
+
+1. Sistema Operacional Base:
+   - Esta imagem contém o Ubuntu 24.04 LTS (Noble Numbat), que é 
+     distribuído sob a Licença GPL e outras licenças de código aberto.
+   - Direitos autorais e licenças do Ubuntu pertencem à Canonical Ltd. 
+     e seus respectivos autores.
+   - Para mais informações: https://ubuntu.com/legal
+
+2. Pacotes e Software Incluídos:
+   - Todos os pacotes de software incluídos nesta imagem mantêm suas 
+     respectivas licenças originais (GPL, MIT, Apache, BSD, etc.).
+   - As licenças específicas de cada pacote podem ser encontradas em:
+     /usr/share/doc/<nome-do-pacote>/copyright
+
+3. Configurações Personalizadas:
+   - Quaisquer scripts de configuração, arquivos e personalizações 
+     aplicadas por esta imagem estão disponíveis para uso, modificação 
+     e redistribuição sem restrições.
+
+TERMOS DE USO:
+
+PERMISSÕES:
+    - Usar esta imagem para fins pessoais, educacionais ou comerciais
+    - Modificar e personalizar o sistema conforme necessário
+    - Redistribuir esta imagem com ou sem modificações
+    - Criar obras derivadas baseadas nesta imagem
+
+CONDIÇÕES:
+- Esta licença e os avisos de copyright devem ser preservados em 
+  redistribuições da imagem completa
+- Qualquer redistribuição deve indicar claramente que foi gerada 
+  pelo UNMM ou derivada desta imagem
+- Modificações significativas devem ser documentadas
+
+ISENÇÃO DE RESPONSABILIDADE:
+
+ESTA IMAGEM É FORNECIDA "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO,
+EXPRESSA OU IMPLÍCITA, INCLUINDO, MAS NÃO SE LIMITANDO ÀS GARANTIAS
+DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UM PROPÓSITO ESPECÍFICO E NÃO VIOLAÇÃO.
+
+EM NENHUM CASO OS CRIADORES OU DISTRIBUIDORES DESTA IMAGEM SERÃO
+RESPONSÁVEIS POR QUALQUER RECLAMAÇÃO, DANOS OU OUTRAS RESPONSABILIDADES,
+SEJA EM AÇÃO DE CONTRATO, DELITO OU DE OUTRA FORMA, DECORRENTES DE, OU
+EM CONEXÃO COM A IMAGEM OU O USO OU OUTRAS NEGOCIAÇÕES NA IMAGEM.
+
+SUPORTE E CONTRIBUIÇÕES:
+
+Esta imagem é um produto educacional/comunitário. Para suporte:
+- Consulte a documentação do Ubuntu: https://help.ubuntu.com/
+- Verifique o repositório do projeto UNMM (se disponível)
+- Contribuições e melhorias são bem-vindas
+
+INFORMAÇÕES ADICIONAIS:
+
+Data de Criação: Gerada automaticamente pelo UNMM
+Versão do Ubuntu: 24.04 LTS (Noble Numbat)
+Arquitetura: amd64
+Ferramenta de Criação: UNMM - Ubuntu Noble Minimal Maker
+
+---
+
+Para licenças específicas de pacotes individuais instalados, execute:
+  dpkg -l | awk '{print $2}' | xargs -I {} sh -c 'cat /usr/share/doc/{}/copyright 2>/dev/null'
+
+Para mais informações sobre o UNMM, consulte a documentação do projeto.

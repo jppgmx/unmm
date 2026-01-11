@@ -1,0 +1,16 @@
+# ShellCheck configuration file
+# https://github.com/koalaman/shellcheck/wiki/Integration
+
+# Follow source statements to external files
+external-sources=true
+
+# Specify the shell dialect
+shell=bash
+
+# Disable specific checks if needed (uncomment to use)
+# disable=SC2034  # Unused variables
+# disable=SC2086  # Double quote to prevent globbing
+disable=SC1017
+
+# Source path - directories where ShellCheck should look for sourced files
+source-path=SCRIPTDIR
