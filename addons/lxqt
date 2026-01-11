@@ -1,3 +1,11 @@
+#!/bin/bash
+#
+# UNMM LXQt Add-on
+# Sob licença MIT
+#
+# Criador: João Paulo (o Jppgmx)
+#
+
 ADDON_NAME="LXQt-nogdm"
 ADDON_DISPLAY_NAME="LXQt Desktop Environment"
 ADDON_VERSION="1.0.0"
