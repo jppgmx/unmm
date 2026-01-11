@@ -1,4 +1,12 @@
 #!/usr/bin/bash
+#
+#   CLI do UNMM - Ubuntu Noble Minimal Maker
+#   ---------------------------------------------
+#   Script principal para criação de imagens do Ubuntu Noble mínimas
+#   baseado em catálogos e add-ons.
+#
+#   Sob licença MIT
+#
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,6 +38,8 @@ check_dependencies || exit 1
 
 # shellcheck disable=SC2120
 cleanup() {
+    # Geralmente o trap não passa argumentos, mas se passar, o primeiro argumento
+    # indica que o cleanup foi chamado manualmente e não pelo trap.
     if [[ $# -gt 0 ]]; then
         local unregister=$0
         if [[ "$unregister" == true ]]; then
@@ -49,7 +59,8 @@ cleanup() {
     fi
 }
 
-
+# help
+# Printa a mensagem de ajuda
 help() {
     cat << EOF
 UNMM - Ubuntu Noble Minimal Maker
@@ -134,6 +145,8 @@ PASSWORD="password"
 CATALOG="base"
 LICENSE_FILE="$ASSETS_DIR/generic_LICENSE"
 ENABLE_VERBOSE=false
+
+# Processamento dos argumentos
 while [[ $# -ne 0 ]]; do
     case "$1" in
         -h|--help)
@@ -343,6 +356,8 @@ if [[ $addon_count -gt 0 ]]; then
     log_info "Aplicando $addon_count add-ons..."
     for addon in "${ADDONS[@]}"; do
         log_verbose "Sourcing add-on '$addon'..."
+
+        # shellcheck disable=SC1090
         source "$ADDONS_DIR/$addon" || {
             log_error "Falha ao carregar o add-on '$addon'."
             exit 1

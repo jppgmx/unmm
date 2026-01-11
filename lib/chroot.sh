@@ -4,6 +4,8 @@
 #   - Version: 1.0.0
 #   - Description: Módulo de manipulação de chroot para UNMM.
 #
+#   Sob licença MIT
+#
 
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
@@ -16,6 +18,11 @@ if [[ -z "${SYSTEM_MOUNTPOINTS+x}" ]]; then
 fi
 
 # chroot_mount_partitions <device> <mountpoint>
+# Monta as partições necessárias da imagem no ponto de montagem especificado.
+#
+# Argumentos:
+#   device - Dispositivo de bloco da imagem (ex: /dev/loop0)
+#   mountpoint - Ponto de montagem base (ex: /mnt/chroot)
 chroot_mount_system() {
     local device="$1"
     local mountpoint="$2"
@@ -52,7 +59,8 @@ chroot_mount_system() {
     log_info "Montagens atuais: ${SYSTEM_MOUNTPOINTS[*]}"
 }
 
-VIRTUAL_FILESYSTEMS=(
+# Dicionário de sistemas de arquivos virtuais a serem montados no chroot
+readonly VIRTUAL_FILESYSTEMS=(
     "/dev:devtmpfs:dev"
     "/dev/pts:devpts:devpts"
     "/proc:proc:proc"
@@ -62,6 +70,10 @@ VIRTUAL_FILESYSTEMS=(
 )
 
 # chroot_prepare_environment <mountpoint>
+# Prepara o ambiente chroot montando os sistemas de arquivos virtuais necessários.
+#
+# Argumentos:
+#   mountpoint - Ponto de montagem base do chroot (ex: /mnt/chroot)
 chroot_prepare_environment() {
     local base_mountpoint="$1"
 
@@ -84,6 +96,16 @@ chroot_prepare_environment() {
     cp /etc/resolv.conf "$base_mountpoint/etc/resolv.conf"
 }
 
+# chroot_call <mountpoint> <command...>
+# Executa um comando dentro do ambiente chroot. 
+# É necessário tenha sido chamado "chroot_mount_system" e "chroot_prepare_environment" antes.
+#
+# Argumentos:
+#   mountpoint - Ponto de montagem base do chroot (ex: /mnt/chroot)
+#   command - Comando a ser executado dentro do chroot
+#
+# Retorna:
+#   Código de saída do comando executado.
 chroot_call() {
     local mountpoint="$1"
     shift
@@ -97,6 +119,9 @@ chroot_call() {
     return $exit_code
 }
 
+# chroot_call_logged <mountpoint> <command...>
+# Executa um comando dentro do ambiente chroot com logging detalhado. 
+# É necessário tenha sido chamado "chroot_mount_system" e "chroot_prepare_environment" antes.
 chroot_call_logged() {
     local mountpoint="$1"
     shift
@@ -109,6 +134,8 @@ chroot_call_logged() {
     return $exit_code
 }
 
+# chroot_cleanup
+# Realiza a limpeza do sistema dentro do chroot e desmonta todas as partições montadas.
 chroot_cleanup() {
     local mountpoint="${SYSTEM_MOUNTPOINTS[0]}"
 

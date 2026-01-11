@@ -4,6 +4,8 @@
 #  - Version: 1.0.0
 #  - Description: Módulo de verificação de dependências para UNMM.
 #
+# Sob licença MIT
+#
 
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
@@ -31,6 +33,8 @@ _REQUIRED_DEPENDENCIES=(
     "sha256sum:coreutils"    # Vital para o Manifesto (.mf)
 )
 
+# check_debian_based
+# Verifica se o sistema operacional é baseado em Debian.
 function check_debian_based() {
     local id_like=""
     if [ -f /etc/os-release ]; then
@@ -48,6 +52,10 @@ function check_debian_based() {
     return 0
 }
 
+# check_dependencies
+# Verifica se todas as dependências necessárias estão instaladas.
+# Se o script está sendo executado em um shell interativo e há dependências ausentes,
+# pergunta ao usuário se deseja instalá-las automaticamente.
 function check_dependencies() {
     local missing_dependencies=()
 

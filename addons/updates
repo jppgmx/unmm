@@ -1,7 +1,15 @@
+#!/bin/bash
+#
+# UNMM Updates Add-on
+# Sob licença MIT
+#
+# Criador: João Paulo (o Jppgmx)
+#
+
 ADDON_NAME="updates"
 ADDON_DISPLAY_NAME="System Updates"
 ADDON_VERSION="1.0.0"
-ADDON_DESCRIPTION="Atualiza o sistema operacional no momento de boot."
+ADDON_DESCRIPTION="Atualiza a estrutura do sistema operacional para a versão mais recente disponível."
 
 #
 #   Parâmetros de um Add-on:
@@ -20,5 +28,6 @@ addon_install() {
     log_info "Atualizando o sistema operacional..."
     chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get update
     chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get upgrade -y
+    chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get autoremove -y
     log_info "Sistema atualizado com sucesso."
 }

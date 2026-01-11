@@ -1,6 +1,11 @@
 #!/bin/bash
+#
+# UNMM First Boot Manager
 # /usr/local/bin/firstboot-manager.sh
 # Gerente de First Boot com Autodestruição
+#
+# Sob licença MIT
+#
 
 LOG_FILE="/var/log/firstboot.log"
 SCRIPT_DIR="/opt/firstboot.d"
@@ -25,7 +30,6 @@ if [ -d "$SCRIPT_DIR" ]; then
                 log "SUCESSO: $(basename "$script")"
             else
                 log "ERRO: $(basename "$script") falhou. Verifique o log."
-                # Opcional: exit 1 aqui se quiser abortar a autodestruição em caso de erro
             fi
         fi
     done

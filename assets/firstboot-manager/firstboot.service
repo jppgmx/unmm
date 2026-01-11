@@ -1,5 +1,5 @@
 [Unit]
-Description=First Boot Setup (Self-Destructing)
+Description=Serviço de Primeiro Boot
 ConditionPathExists=/opt/firstboot.d
 After=network-online.target
 Wants=network-online.target

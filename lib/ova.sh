@@ -3,11 +3,24 @@
 #   UNMM OVA Module
 #   - Version: 1.0.0
 #   - Description: Módulo para criação de imagens OVA.
+#
+#   Sob licença MIT
+#
 # set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 
 # generate_ovf <vm_name> <vmdk_file> <cpus> <ram_mb> <boot_mode> <license_file> <output_ovf>
+# Gera o arquivo OVF com base nos parâmetros fornecidos.
+#
+# Argumentos:
+#   vm_name - Nome da máquina virtual.
+#   vmdk_file - Caminho para o arquivo VMDK.
+#   cpus - Número de CPUs virtuais.
+#   ram_mb - Quantidade de RAM em MB.
+#   boot_mode - Modo de boot (bios, uefi, hybrid).
+#   license_file - Caminho para o arquivo de licença.
+#   output_ovf - Caminho para o arquivo OVF de saída.
 generate_ovf() {
     local vm_name="$1"
     local vmdk_file="$2"
@@ -177,6 +190,12 @@ EOF
 }
 
 # generate_manifest <ovf_file> <vmdk_file> <output_mf>
+# Gera o arquivo manifesto (.mf) com os checksums SHA256 dos arquivos OVF e VMDK.
+#
+# Argumentos:
+#   ovf_file - Caminho para o arquivo OVF.
+#   vmdk_file - Caminho para o arquivo VMDK.
+#   output_mf - Caminho para o arquivo manifesto de saída.
 generate_manifest() {
     local ovf_file="$1"
     local vmdk_file="$2"
@@ -206,6 +225,13 @@ EOF
 }
 
 # create_ova_package <ovf_file> <vmdk_file> <mf_file> <output_ova>
+# Cria o pacote OVA a partir dos arquivos OVF, VMDK e MF.
+#
+# Argumentos:
+#   ovf_file - Caminho para o arquivo OVF.
+#   vmdk_file - Caminho para o arquivo VMDK.
+#   mf_file - Caminho para o arquivo manifesto.
+#   output_ova - Caminho para o arquivo OVA de saída.
 create_ova_package() {
     local ovf_file="$1"
     local vmdk_file="$2"
@@ -237,6 +263,13 @@ create_ova_package() {
 }
 
 # ova_generate <hostname> <output_path> <boot_mode> <license_file>
+# Combina todas as etapas para gerar o arquivo OVA completo.
+#
+# Argumentos:
+#   hostname - Nome do host/VM.
+#   output_path - Caminho do diretório de saída.
+#   boot_mode - Modo de boot (bios, uefi, hybrid).
+#   license_file - Caminho para o arquivo de licença.
 ova_generate() {
     log_info "Iniciando processo de geração OVA..."
     
