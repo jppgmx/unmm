@@ -24,11 +24,11 @@ chroot_mount_system() {
 
     log_info "Montando partições da imagem..."
 
-    local schema="$(diskpart_get_disk_partition_schema "$device")"
-    local base_mountpoint="$mountpoint"
-
-    local partitions="$(diskpart_get_partitions "$device")"
-    local system_partition="${device}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
+    local schema base_mountpoint partitions system_partition
+    schema="$(diskpart_get_disk_partition_schema "$device")"
+    base_mountpoint="$mountpoint"
+    partitions="$(diskpart_get_partitions "$device")"
+    system_partition="${device}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
 
     log_verbose "Montando partição do sistema: $system_partition em $base_mountpoint"
     mkdir -p "$base_mountpoint"
@@ -40,7 +40,8 @@ chroot_mount_system() {
     SYSTEM_MOUNTPOINTS+=("$base_mountpoint")
 
     if [[ $schema == "gpt" ]]; then
-        local efi_partition="${device}p$(echo "$partitions" | grep fat32 | cut -d';' -f1 | cut -d'=' -f2)"
+        local efi_partition
+        efi_partition="${device}p$(echo "$partitions" | grep fat32 | cut -d';' -f1 | cut -d'=' -f2)"
         mkdir -p "$base_mountpoint/boot/efi"
 
         log_verbose "Montando partição EFI: $efi_partition em $base_mountpoint/boot/efi"
