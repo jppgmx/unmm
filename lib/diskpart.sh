@@ -341,7 +341,8 @@ diskpart_format_partition() {
 # Argumentos:
 #   device        - Dispositivo onde a partição será criada
 #   part_type     - Tipo de partição (ex: primary)
-#   fs_type       - Tipo de sistema de arquivos (ex: ext4, fat32)
+#   fs_type       - Tipo de sistema de arquivos (ex: ext4, fat32). Se vazio, a partição não será formatada,
+#                       isso é comum em partições especiais como BIOS GRUB.
 #   start_sector  - Setor inicial da partição (ex: 1MiB)
 #   end_sector    - Setor final da partição (ex: 100%)
 #   format        - Se true, formata a partição após a criação
