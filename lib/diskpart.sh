@@ -358,18 +358,25 @@ diskpart_create_partition() {
 
     log_info "Criando partição '$part_type' em '$device' de '$start_sector' a '$end_sector'..."
 
-    exec_logged "DISKPART" parted -s "$device" mkpart primary "$fs_type" "$start_sector" "$end_sector"
+    local parted_command
+    if [[ -n "$fs_type" ]]; then
+        log_verbose "Tipo de sistema de arquivos especificado: $fs_type"
+        parted_command="mkpart primary $fs_type $start_sector $end_sector"
+    else
+        log_verbose "Nenhum tipo de sistema de arquivos especificado; a partição não será formatada."
+        parted_command="mkpart primary $start_sector $end_sector"
+    fi
+
+    #shellcheck disable=SC2086
+    exec_logged "DISKPART" parted -s "$device" $parted_command
 
     local last_partition_number
     last_partition_number=$(diskpart_get_last_partition "$device" | cut -d';' -f1 | cut -d'=' -f2)
     log_verbose "Número da partição criada: $last_partition_number"
 
     local partition_device="${device}p${last_partition_number}"
-    if [[ "$format" == true ]]; then
+    if [[ "$format" == true && -n "$fs_type" ]]; then
         diskpart_format_partition "$partition_device" "$fs_type"
-    fi
-
-    if [[ "$format" == true ]]; then
         log_info "Partição '$part_type' criada e formatada com sucesso."
     else
         log_info "Partição '$part_type' criada com sucesso."
@@ -377,6 +384,13 @@ diskpart_create_partition() {
     echo "$partition_device"
 }
 
+# diskpart_set_flag <part_device> <flag_name> <flag_value>
+# Define uma flag específica em uma partição
+#
+# Argumentos:
+#   part_device - Partição onde a flag será definida
+#   flag_name   - Nome da flag a ser definida (ex: boot, esp, bios_grub)
+#   flag_value  - Valor da flag (on ou off)
 diskpart_set_flag() {
     local part_device="$1"
     local flag_name="$2"
