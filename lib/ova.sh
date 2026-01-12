@@ -6,9 +6,6 @@
 #
 #   Sob licença MIT
 #
-# set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 
 # generate_ovf <vm_name> <vmdk_file> <cpus> <ram_mb> <boot_mode> <license_file> <output_ovf>
 # Gera o arquivo OVF com base nos parâmetros fornecidos.

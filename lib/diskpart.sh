@@ -7,11 +7,6 @@
 # Sob licença MIT
 #
 
-set -euo pipefail
-
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
-
 declare -ga TRACKED_LOSETUP_DEVICES
 if [[ -z "${TRACKED_LOSETUP_DEVICES+x}" ]]; then
     TRACKED_LOSETUP_DEVICES=()
@@ -298,114 +293,98 @@ diskpart_get_partitions() {
     done
 }
 
-# diskpart_create_mbr_partition <device>
-# Cria uma partição BIOS MBR em um disco GPT. Útil para suporte híbrido.
+# diskpart_get_last_partition <device>
+# Obtém a última partição do disco
 #
 # Argumentos:
-#   device - Dispositivo onde a partição será criada
-diskpart_create_mbr_partition() {
+#   device - Dispositivo do qual obter a última partição
+#
+# Retorna:
+#   A última partição no formato chave=valor separado por ponto e vírgula
+diskpart_get_last_partition() {
     local device="$1"
-    log_info "Criando partição MBR em '$device'..."
 
-    local schema_type
-    schema_type=$(diskpart_get_disk_partition_schema "$device")
-    if [[ "$schema_type" != "gpt" ]]; then
-        log_error "Criar uma partição BIOS MBR requer uma tabela de partições GPT."
-        exit 1
-    fi
-
-    local start_sector=1MiB
-    local end_sector=2MiB
-    exec_logged "DISKPART" parted -s "$device" mkpart primary "$start_sector" "$end_sector"
-    
-    local bios_grub_partition_number
-    bios_grub_partition_number=$(diskpart_get_partitions "$device" | grep "primary" | tail -n1 | cut -d';' -f1 | cut -d'=' -f2)
-    log_verbose "Número da partição BIOS MBR criada: $bios_grub_partition_number"
-    exec_logged "DISKPART" parted -s "$device" set "$bios_grub_partition_number" bios_grub on
-    log_info "Partição MBR criada com sucesso."
+    diskpart_get_partitions "$device" | tail -n1
 }
 
-# diskpart_create_efi_partition <device>
-# Cria uma partição EFI em um disco GPT e a formata como FAT32. Tamanho padrão de 200MiB.
+# diskpart_format_partition <partition_device> <filesystem_type>
+# Formata a partição fornecida com o sistema de arquivos especificado
 #
 # Argumentos:
-#   device - Dispositivo onde a partição será criada
-diskpart_create_efi_partition() {
-    local device="$1"
-    log_info "Criando partição EFI em '$device'..."
+#   partition_device - Dispositivo da partição a ser formatada
+#   filesystem_type  - Tipo de sistema de arquivos (ext4 ou fat32)
+diskpart_format_partition() {
+    local partition_device="$1"
+    local filesystem_type="$2"
 
-    local schema_type
-    schema_type=$(diskpart_get_disk_partition_schema "$device")
-    if [[ "$schema_type" != "gpt" ]]; then
-        log_error "Criar uma partição EFI requer uma tabela de partições GPT."
-        exit 1
-    fi
+    log_info "Formatando partição '$partition_device' como '$filesystem_type'..."
 
-    local last_partition start_sector
-    last_partition=$(diskpart_get_partitions "$device" | tail -n1)
-    start_sector=$(echo "$last_partition" | cut -d';' -f3 | cut -d'=' -f2)
-    if [[ -z "$start_sector" ]]; then
-        start_sector="1MiB"
-    fi
+    case "$filesystem_type" in
+        ext4)
+            exec_logged "DISKPART" mkfs.ext4 -F "$partition_device"
+            ;;
+        fat32)
+            exec_logged "DISKPART" mkfs.fat -F32 "$partition_device"
+            ;;
+        *)
+            log_error "Tipo de sistema de arquivos desconhecido: $filesystem_type"
+            exit 1
+            ;;
+    esac
 
-    log_verbose "Início da nova partição EFI em: $start_sector"
-    local start_value
-    start_value=$(_unit_to_mib "$start_sector")
-
-    local esp_size="200MiB"
-
-    local sum=$(( $(echo "${start_value%MiB}") + $(echo "${esp_size%MiB}") ))
-    local end_sector="${sum}MiB"
-
-    log_verbose "Fim da nova partição EFI após cálculo: $end_sector"
-    
-    exec_logged "DISKPART" parted -s "$device" mkpart primary fat32 "$start_sector" "$end_sector"
-    local last_partition_number
-    last_partition_number=$(diskpart_get_partitions "$device" | tail -n1 | cut -d';' -f1 | cut -d'=' -f2)
-    log_verbose "Número da partição EFI criada: $last_partition_number"
-
-    log_verbose "Formatando partição EFI como FAT32..."
-    local esp_partition="${device}p${last_partition_number}"
-    exec_logged "DISKPART" mkfs.fat -F32 "$esp_partition"
-
-    exec_logged "DISKPART" parted -s "$device" set "$last_partition_number" esp on
-
-    log_info "Partição EFI criada com sucesso."
+    log_info "Partição '$partition_device' formatada com sucesso como '$filesystem_type'."
 }
 
-# diskpart_create_system_partition <device>
-# Cria uma partição do sistema que ocupa o restante do espaço disponível no disco e a formata como ext4.
+# diskpart_create_partition <device> <part_type> <fs_type> <start_sector> <end_sector> <format>
+# Cria uma partição no dispositivo fornecido
 #
 # Argumentos:
-#   device - Dispositivo onde a partição será criada
-diskpart_create_system_partition() {
+#   device        - Dispositivo onde a partição será criada
+#   part_type     - Tipo de partição (ex: primary)
+#   fs_type       - Tipo de sistema de arquivos (ex: ext4, fat32)
+#   start_sector  - Setor inicial da partição (ex: 1MiB)
+#   end_sector    - Setor final da partição (ex: 100%)
+#   format        - Se true, formata a partição após a criação
+#
+# Retorna:
+#   O dispositivo da partição criada
+diskpart_create_partition() {
     local device="$1"
-    log_info "Criando partição do sistema em '$device'..."
+    local part_type="$2"
+    local fs_type="$3"
+    local start_sector="$4"
+    local end_sector="$5"
+    local format="$6"
 
-    local schema_type
-    schema_type=$(diskpart_get_disk_partition_schema "$device")
-        
-    # Obter informações sobre a última partição existente
-    local last_partition end_of_last_partition
-    last_partition=$(diskpart_get_partitions "$device" | tail -n1)
-    end_of_last_partition=$(echo "$last_partition" | cut -d';' -f3 | cut -d'=' -f2)
+    log_info "Criando partição '$part_type' em '$device' de '$start_sector' a '$end_sector'..."
 
-    if [[ -z "$end_of_last_partition" ]]; then
-        end_of_last_partition="1MiB"
+    exec_logged "DISKPART" parted -s "$device" mkpart primary "$fs_type" "$start_sector" "$end_sector"
+
+    local last_partition_number
+    last_partition_number=$(diskpart_get_last_partition "$device" | cut -d';' -f1 | cut -d'=' -f2)
+    log_verbose "Número da partição criada: $last_partition_number"
+
+    local partition_device="${device}p${last_partition_number}"
+    if [[ "$format" == true ]]; then
+        diskpart_format_partition "$partition_device" "$fs_type"
     fi
 
-    # Criar partição ext4 do fim da última partição até o fim do disco
-    log_verbose "Última partição termina em: $end_of_last_partition"
-    exec_logged "DISKPART" parted -s "$device" mkpart primary ext4 "$end_of_last_partition" 100%
-    local last_partition_number
-    last_partition_number=$(diskpart_get_partitions "$device" | tail -n1 | cut -d';' -f1 | cut -d'=' -f2)
+    log_info "Partição '$part_type' criada e formatada com sucesso."
+    echo "$partition_device"
+}
 
-    log_verbose "Número da partição do sistema criada: $last_partition_number"
-    log_verbose "Formatando partição do sistema como ext4..."
-    local system_partition="${device}p${last_partition_number}"
-    exec_logged "DISKPART" mkfs.ext4 -F "$system_partition"
+diskpart_set_flag() {
+    local part_device="$1"
+    local flag_name="$2"
+    local flag_value="$3"
 
-    log_info "Partição do sistema criada com sucesso."
+    local device partition_number
+    partition_number=$(echo "$part_device" | grep -oE '[0-9]+$')
+    device="${part_device%"p$partition_number"}"
+
+    log_verbose "Definindo flag '$flag_name' como '$flag_value' na partição '$part_device' (disco '$device', partição '$partition_number')..."
+    exec_logged "DISKPART" parted -s "$device" set "$partition_number" "$flag_name" "$flag_value"
+    log_verbose "Flag '$flag_name' definida como '$flag_value' na partição '$part_device'."
 }
 
 # diskpart_create_image_mbr_layout <device>
@@ -417,7 +396,7 @@ diskpart_create_image_mbr_layout() {
     log_info "Criando layout MBR na imagem de disco '$device'..."
 
     diskpart_create_partition_table "$device" "msdos"
-    diskpart_create_system_partition "$device"
+    diskpart_create_partition "$device" "primary" "ext4" "1MiB" "100%" true
 
     log_info "Layout MBR criado com sucesso na imagem de disco."
 }
@@ -434,13 +413,30 @@ diskpart_create_image_gpt_layout() {
 
     diskpart_create_partition_table "$device" "gpt"
     
+    local start_efi_partition="1MiB"
+    local end_efi_partition="200MiB"
+
+    local mbr_partition efi_partition system_partition
+    
     if [[ "$ishybrid" == true ]]; then
         log_info "Criando partição MBR para suporte híbrido..."
-        diskpart_create_mbr_partition "$device"
+        mbr_partition=$(diskpart_create_partition "$device" "primary" "" "1MiB" "2MiB" false)
+        log_verbose "A partição MBR é $mbr_partition"
+        diskpart_set_flag "$mbr_partition" "bios_grub" on
+
+        start_efi_partition="2MiB"
+        end_efi_partition="201MiB"
     fi
 
-    diskpart_create_efi_partition "$device"
-    diskpart_create_system_partition "$device"
+    log_info "Criando partição EFI..."
+    efi_partition=$(diskpart_create_partition "$device" "primary" "fat32" "$start_efi_partition" "$end_efi_partition" true)
+    log_verbose "A partição EFI é $efi_partition"
+    diskpart_set_flag "$efi_partition" "boot" on
+    diskpart_set_flag "$efi_partition" "esp" on
+
+    log_info "Criando partição do sistema..."
+    system_partition=$(diskpart_create_partition "$device" "primary" "ext4" "$end_efi_partition" "100%" true)
+    log_verbose "A partição do sistema é $system_partition"
 
     log_info "Layout GPT criado com sucesso na imagem de disco."
 }

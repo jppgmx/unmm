@@ -7,9 +7,6 @@
 # Sob licença MIT
 #
 
-set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
-
 _REQUIRED_DEPENDENCIES=(
     # --- Manipulação de Disco e Imagem ---
     "qemu-img:qemu-utils"
