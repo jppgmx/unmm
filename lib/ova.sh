@@ -6,9 +6,6 @@
 #
 #   Sob licença MIT
 #
-# set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 
 # generate_ovf <vm_name> <vmdk_file> <cpus> <ram_mb> <boot_mode> <license_file> <output_ovf>
 # Gera o arquivo OVF com base nos parâmetros fornecidos.
@@ -41,8 +38,9 @@ generate_ovf() {
     
     # Obter informações do VMDK
     log_verbose "Obtendo informações do arquivo VMDK..."
-    local vmdk_basename=$(basename "$vmdk_file")
-    local vmdk_size=$(stat -c%s "$vmdk_file")
+    local vmdk_basename vmdk_size
+    vmdk_basename=$(basename "$vmdk_file")
+    vmdk_size=$(stat -c%s "$vmdk_file")
     
     log_verbose "VMDK: arquivo='$vmdk_basename', tamanho=$vmdk_size bytes"
     
@@ -204,15 +202,16 @@ generate_manifest() {
     log_info "Gerando arquivo manifesto (.mf) em '$output_mf'..."
     log_verbose "Calculando checksums SHA256 para os arquivos..."
 
-    local ovf_basename=$(basename "$ovf_file")
-    local vmdk_basename=$(basename "$vmdk_file")
+    local ovf_basename vmdk_basename ovf_sha256 vmdk_sha256
+    ovf_basename=$(basename "$ovf_file")
+    vmdk_basename=$(basename "$vmdk_file")
 
     log_verbose "Calculando checksum do OVF: $ovf_file"
-    local ovf_sha256=$(sha256sum "$ovf_file" | awk '{print $1}')
+    ovf_sha256=$(sha256sum "$ovf_file" | awk '{print $1}')
     log_verbose "SHA256($ovf_basename) = $ovf_sha256"
 
     log_verbose "Calculando checksum do VMDK: $vmdk_file"
-    local vmdk_sha256=$(sha256sum "$vmdk_file" | awk '{print $1}')
+    vmdk_sha256=$(sha256sum "$vmdk_file" | awk '{print $1}')
     log_verbose "SHA256($vmdk_basename) = $vmdk_sha256"
 
     cat > "$output_mf" <<EOF

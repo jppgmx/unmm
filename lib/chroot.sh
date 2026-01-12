@@ -7,11 +7,6 @@
 #   Sob licença MIT
 #
 
-set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/diskpart.sh"
-
 declare -ag SYSTEM_MOUNTPOINTS
 if [[ -z "${SYSTEM_MOUNTPOINTS+x}" ]]; then
     SYSTEM_MOUNTPOINTS=()
@@ -29,13 +24,14 @@ chroot_mount_system() {
 
     log_info "Montando partições da imagem..."
 
-    local schema="$(diskpart_get_disk_partition_schema "$device")"
-    local base_mountpoint="$mountpoint"
-
-    local partitions="$(diskpart_get_partitions "$device")"
-    local system_partition="${device}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
+    local schema base_mountpoint partitions system_partition
+    schema="$(diskpart_get_disk_partition_schema "$device")"
+    base_mountpoint="$mountpoint"
+    partitions="$(diskpart_get_partitions "$device")"
+    system_partition="${device}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
 
     log_verbose "Montando partição do sistema: $system_partition em $base_mountpoint"
+    mkdir -p "$base_mountpoint"
     if ! mount "$system_partition" "$base_mountpoint"; then
         log_error "Falha ao montar a partição do sistema $system_partition em $base_mountpoint"
         exit 1
@@ -44,7 +40,8 @@ chroot_mount_system() {
     SYSTEM_MOUNTPOINTS+=("$base_mountpoint")
 
     if [[ $schema == "gpt" ]]; then
-        local efi_partition="${device}p$(echo "$partitions" | grep vfat | cut -d';' -f1 | cut -d'=' -f2)"
+        local efi_partition
+        efi_partition="${device}p$(echo "$partitions" | grep fat32 | cut -d';' -f1 | cut -d'=' -f2)"
         mkdir -p "$base_mountpoint/boot/efi"
 
         log_verbose "Montando partição EFI: $efi_partition em $base_mountpoint/boot/efi"
@@ -137,6 +134,11 @@ chroot_call_logged() {
 # chroot_cleanup
 # Realiza a limpeza do sistema dentro do chroot e desmonta todas as partições montadas.
 chroot_cleanup() {
+    if [[ ${#SYSTEM_MOUNTPOINTS[@]} -eq 0 ]]; then
+        log_warning "Não há nada para limpar."
+        return 0
+    fi
+
     local mountpoint="${SYSTEM_MOUNTPOINTS[0]}"
 
     log_info "Fazendo limpeza do sistema..."

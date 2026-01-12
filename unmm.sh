@@ -38,14 +38,7 @@ check_dependencies || exit 1
 
 # shellcheck disable=SC2120
 cleanup() {
-    # Geralmente o trap não passa argumentos, mas se passar, o primeiro argumento
-    # indica que o cleanup foi chamado manualmente e não pelo trap.
-    if [[ $# -gt 0 ]]; then
-        local unregister=$0
-        if [[ "$unregister" == true ]]; then
-            trap - EXIT INT TERM ERR
-        fi
-    fi
+    trap - EXIT INT TERM ERR
 
     chroot_cleanup
     diskpart_free_all_loop_devices
@@ -303,8 +296,11 @@ source "$CATALOG_DIR/$CATALOG" || {
     exit 1
 }
 
-disk_image_path=$(to_absolute_path "$OUTPUT_PATH/$HOSTNAME.img")
+log_verbose "Determinando o disco a ser criado..."
+disk_image_path="$OUTPUT_PATH/$HOSTNAME.img"
 mkdir -p "$(dirname "$disk_image_path")"
+
+log_info "Um novo disco será criado em $disk_image_path"
 
 if size_less_than "$MAXIMUM_SIZE" "$CATALOG_PREFFERED_SIZE"; then
     log_error "O tamanho máximo especificado ($MAXIMUM_SIZE) é menor que o tamanho preferido do catálogo ($CATALOG_PREFFERED_SIZE)."

@@ -12,7 +12,7 @@ CATALOG_VERSION="1.0.0"
 CATALOG_DESCRIPTION="Base de todo o catálogo."
 CATALOG_PREFFERED_SIZE="4G"
 
-_SYSTEM_PACKAGES_ESSENTIALS=(
+_BASE_SYSTEM_PACKAGES_ESSENTIALS=(
     "linux-image-generic" "linux-firmware" "initramfs-tools" "zstd"
     "netplan.io" "systemd-resolved"
     "locales" "console-setup"
@@ -20,16 +20,16 @@ _SYSTEM_PACKAGES_ESSENTIALS=(
     "software-properties-common" "ca-certificates" "wget" "gnupg"
     "haveged"
 )
-_SYSTEM_ARCHITECTURE_SUPPORTED="amd64"
-_SYSTEM_UBUNTU_MIRROR="http://archive.ubuntu.com/ubuntu"
-_SYSTEM_UBUNTU_CODENAME="noble"
-_SYSTEM_PREFERRED_SWAP_SIZE="2G"
-_SYSTEM_UBUNTU_SOURCES_LIST=(
+_BASE_SYSTEM_ARCHITECTURE_SUPPORTED="amd64"
+_BASE_SYSTEM_UBUNTU_MIRROR="http://archive.ubuntu.com/ubuntu"
+_BASE_SYSTEM_UBUNTU_CODENAME="noble"
+_BASE_SYSTEM_PREFERRED_SWAP_SIZE="2G"
+_BASE_SYSTEM_UBUNTU_SOURCES_LIST=(
     "deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse"
     "deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse"
     "deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse"
 )
-_SYSTEM_DEBCONF_DEFAULTS=(
+_BASE_SYSTEM_DEBCONF_DEFAULTS=(
     "locales locales/default_environment_locale select pt_BR.UTF-8"
     "locales locales/locales_to_be_generated multiselect pt_BR.UTF-8 UTF-8"
     "console-setup console-setup/layoutcode select br"
@@ -51,7 +51,7 @@ _base_deboostrap() {
     local mirror="$3"
 
     log_info "Executando debootstrap no ponto de montagem $mountpoint..."
-    if ! exec_logged "debootstrap" debootstrap --arch="$_SYSTEM_ARCHITECTURE_SUPPORTED" --variant=minbase \
+    if ! exec_logged "debootstrap" debootstrap --arch="$_BASE_SYSTEM_ARCHITECTURE_SUPPORTED" --variant=minbase \
         "$suite" "$mountpoint" "$mirror"; then
         log_error "Falha ao executar o debootstrap."
         exit 1
@@ -100,17 +100,19 @@ _base_write_fstab_file() {
 
     rm -f "$fstab_path"
     
-    local schema=$(diskpart_get_disk_partition_schema "$CATALOG_INSTALL_ARG_DEVICE")
-    local partitions=$(diskpart_get_partitions "$CATALOG_INSTALL_ARG_DEVICE")
+    local schema partitions system_partition system_uuid
 
-    local system_partition="${CATALOG_INSTALL_ARG_DEVICE}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
-    local system_uuid=$(blkid -s UUID -o value "$system_partition")
+    schema=$(diskpart_get_disk_partition_schema "$CATALOG_INSTALL_ARG_DEVICE")
+    partitions=$(diskpart_get_partitions "$CATALOG_INSTALL_ARG_DEVICE")
+    system_partition="${CATALOG_INSTALL_ARG_DEVICE}p$(echo "$partitions" | grep ext4 | cut -d';' -f1 | cut -d'=' -f2)"
+    system_uuid=$(blkid -s UUID -o value "$system_partition")
 
     fstab_lines+=("UUID=$system_uuid / ext4 defaults 0 1")
 
     if [[ "$schema" == "gpt" ]]; then
-        local efi_partition="${CATALOG_INSTALL_ARG_DEVICE}p$(echo "$partitions" | grep esp | cut -d';' -f1 | cut -d'=' -f2)"
-        local efi_uuid=$(blkid -s UUID -o value "$efi_partition")
+        local efi_partition efi_uuid
+        efi_partition="${CATALOG_INSTALL_ARG_DEVICE}p$(echo "$partitions" | grep esp | cut -d';' -f1 | cut -d'=' -f2)"
+        efi_uuid=$(blkid -s UUID -o value "$efi_partition")
 
         fstab_lines+=("UUID=$efi_uuid /boot/efi vfat defaults 0 1")
     fi
@@ -138,7 +140,7 @@ _base_write_ubuntu_sources_list() {
     local sources_list_path="$mountpoint/etc/apt/sources.list"
     log_info "Escrevendo arquivo sources.list em $sources_list_path"
     rm -f "$sources_list_path"
-    for source in "${_SYSTEM_UBUNTU_SOURCES_LIST[@]}"; do
+    for source in "${_BASE_SYSTEM_UBUNTU_SOURCES_LIST[@]}"; do
         log_verbose "Adicionando repositório ao sources.list: $source"
         echo "$source" >> "$sources_list_path"
     done
@@ -166,7 +168,7 @@ _base_apt_update() {
 }
 
 # _base_install_essentials <mountpoint>
-# Instala os pacotes essenciais do sistema no ponto de montagem especificado com base na variável _SYSTEM_PACKAGES_ESSENTIALS.
+# Instala os pacotes essenciais do sistema no ponto de montagem especificado com base na variável _BASE_SYSTEM_PACKAGES_ESSENTIALS.
 #
 # Argumentos:
 #   mountpoint - Ponto de montagem onde o sistema está instalado.
@@ -174,7 +176,9 @@ _base_install_essentials() {
     local mountpoint="$1"
 
     log_info "Instalando pacotes essenciais do sistema..."
-    if ! chroot_call_logged "$mountpoint" $APT_GET_COMMAND "${_SYSTEM_PACKAGES_ESSENTIALS[@]}"; then
+
+    #shellcheck disable=SC2086
+    if ! chroot_call_logged "$mountpoint" $APT_GET_COMMAND "${_BASE_SYSTEM_PACKAGES_ESSENTIALS[@]}"; then
         log_error "Falha ao instalar pacotes essenciais do sistema."
         exit 1
     fi
@@ -265,7 +269,7 @@ _base_grub_install() {
     local grub_targets_install=()
 
     log_info "Determinando a forma de instalação do GRUB..."
-    if [[ "$bootmode" == "uefi" ]]; then
+    if [[ "$bootmode" == "uefi" || "$bootmode" == "hybrid" ]]; then
         grub_packages=("grub-efi-amd64" "shim-signed")
         grub_targets_install+=(
             "EFI: --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck --no-floppy --no-nvram"
@@ -286,6 +290,8 @@ _base_grub_install() {
     done
 
     log_info "Instalando pacotes do GRUB..."
+
+    #shellcheck disable=SC2086
     if ! chroot_call_logged "$mountpoint" $APT_GET_COMMAND "${grub_packages[@]}"; then
         log_error "Falha ao instalar pacotes do GRUB."
         exit 1
@@ -295,6 +301,8 @@ _base_grub_install() {
         IFS=": " read -r desc grub_command <<< "$target"
 
         log_info "Instalando o GRUB para $desc..."
+
+        #shellcheck disable=SC2086
         if ! chroot_call_logged "$mountpoint" grub-install $grub_command; then
             log_error "Falha ao instalar o GRUB para $desc."
             exit 1
@@ -344,7 +352,7 @@ _base_install() {
     log_info "Preparando instalação do catálogo $CATALOG_NAME..."
 
     chroot_mount_system "$CATALOG_INSTALL_ARG_DEVICE" "$CATALOG_INSTALL_ARG_MOUNTPOINT"
-    _base_deboostrap "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_SYSTEM_UBUNTU_CODENAME" "$_SYSTEM_UBUNTU_MIRROR"
+    _base_deboostrap "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_BASE_SYSTEM_UBUNTU_CODENAME" "$_BASE_SYSTEM_UBUNTU_MIRROR"
 
     log_info "Instalação básica do catálogo $CATALOG_NAME concluída."
     log_info "Preparando ambiente chroot para próxima etapa..."
@@ -352,7 +360,8 @@ _base_install() {
     chroot_prepare_environment "$CATALOG_INSTALL_ARG_MOUNTPOINT"
     log_info "Ambiente chroot preparado."
 
-    local swap_line=$(_base_write_swapfile "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_SYSTEM_PREFERRED_SWAP_SIZE")
+    local swap_line
+    swap_line=$(_base_write_swapfile "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_BASE_SYSTEM_PREFERRED_SWAP_SIZE")
     _base_write_fstab_file "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$swap_line"
 
     log_warning "AVISO: Algumas saídas normais do APT são imprimidas no stderr, podendo parecer que há erros quando não há."
@@ -363,13 +372,15 @@ _base_install() {
     _base_apt_update "$CATALOG_INSTALL_ARG_MOUNTPOINT"
 
     log_verbose "Instalando debconf-utils para configuração de pacotes..."
+
+    #shellcheck disable=SC2086
     if ! chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND debconf-utils; then
         log_error "Falha ao instalar debconf-utils."
         exit 1
     fi
 
     log_info "Configurando valores padrão do debconf..."
-    for debconf_entry in "${_SYSTEM_DEBCONF_DEFAULTS[@]}"; do
+    for debconf_entry in "${_BASE_SYSTEM_DEBCONF_DEFAULTS[@]}"; do
         log_verbose "Configurando debconf: $debconf_entry"
         if ! echo "$debconf_entry" | chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" "debconf-set-selections"; then
             log_error "Falha ao configurar debconf: $debconf_entry"
