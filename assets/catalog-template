@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# UNMM Custom Catalog Template
+# Sob licença MIT
+#
+# Criador: [Seu Nome]
+#
+
+# Importar o catálogo base (obrigatório)
+source "$(dirname "$0")/base"
+
+# Metadados do catálogo
+CATALOG_NAME="seucatalogo"
+CATALOG_DISPLAY_NAME="Seu Catálogo Personalizado"
+CATALOG_DESCRIPTION="Descrição do seu catálogo personalizado baseado no Ubuntu Minimal."
+CATALOG_VERSION="1.0"
+CATALOG_PREFFERED_SIZE="5G"
+
+# Variáveis customizadas (opcional)
+# _CUSTOM_PACKAGES=("pacote1" "pacote2" "pacote3")
+
+# Função principal de instalação
+# Argumentos globais:
+#
+# CATALOG_INSTALL_ARG_DEVICE        - Dispositivo de bloco onde a imagem está montada.
+# CATALOG_INSTALL_ARG_MOUNTPOINT    - Ponto de montagem do sistema de arquivos raiz.
+# CATALOG_INSTALL_ARG_HOSTNAME      - Nome do host a ser configurado.
+# CATALOG_INSTALL_ARG_USERNAME      - Nome do usuário a ser criado.
+# CATALOG_INSTALL_ARG_PASSWORD      - Senha do usuário a ser criado.
+# CATALOG_INSTALL_ARG_BOOTMODE      - Modo de boot (bios, uefi, hybrid).
+# CATALOG_INSTALL_ARG_DISKIMAGEPATH - Caminho para a imagem de disco.
+# CATALOG_INSTALL_ARG_SIZE          - Tamanho da imagem de disco.
+#
+catalog_install() {
+    # Executar instalação base (obrigatório)
+    _base_install
+
+    log_info "Aplicando customizações do catálogo $CATALOG_NAME..."
+
+    # Adicione aqui suas personalizações
+    # Exemplo: instalar pacotes adicionais
+    # chroot_call_logged "$CATALOG_INSTALL_ARG_MOUNTPOINT" apt-get install -y seu-pacote
+
+    # Exemplo: copiar arquivos
+    # cp /caminho/local/arquivo "$CATALOG_INSTALL_ARG_MOUNTPOINT/caminho/destino/"
+
+    # Exemplo: criar diretórios
+    # mkdir -p "$CATALOG_INSTALL_ARG_MOUNTPOINT/opt/seudados"
+
+    # Exemplo: escrever arquivos de configuração
+    # cat > "$CATALOG_INSTALL_ARG_MOUNTPOINT/etc/seuconfig.conf" <<EOF
+    # # Sua configuração aqui
+    # EOF
+
+    log_info "Customizações do catálogo $CATALOG_NAME aplicadas com sucesso."
+}

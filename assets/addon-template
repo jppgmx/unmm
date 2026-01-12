@@ -1,0 +1,57 @@
+#!/bin/bash
+#
+# UNMM Custom Add-on Template
+# Sob licença MIT
+#
+# Criador: [Seu Nome]
+#
+
+ADDON_NAME="template"
+ADDON_DISPLAY_NAME="Template Add-on"
+ADDON_VERSION="1.0.0"
+ADDON_DESCRIPTION="Descrição do que este add-on faz."
+
+# Array de pacotes a serem instalados (opcional)
+_ADDON_PACKAGES=(
+    # "pacote1"
+    # "pacote2"
+)
+
+#
+#   Parâmetros de um Add-on:
+#
+#   ADDON_INSTALL_ARG_DISKIMAGEPATH     - caminho do arquivo de imagem de disco
+#   ADDON_INSTALL_ARG_DEVICE            - dispositivo de disco alvo
+#   ADDON_INSTALL_ARG_MOUNTPOINT        - ponto de montagem do sistema de arquivos raiz
+#   ADDON_INSTALL_ARG_HOSTNAME          - nome do host da instalação
+#   ADDON_INSTALL_ARG_USERNAME          - nome do usuário padrão
+#   ADDON_INSTALL_ARG_PASSWORD          - senha do usuário padrão
+#   ADDON_INSTALL_ARG_BOOTMODE          - modo de boot (bios, uefi ou hybrid)
+#   ADDON_INSTALL_ARG_SIZE              - tamanho do disco em bytes
+#   ADDON_INSTALL_ARG_INSTALLED_CATALOG - catálogo instalado pela CLI
+#
+addon_install() {
+    log_info "Instalando add-on customizado..."
+
+    # Instalar pacotes se definidos
+    if [ ${#_ADDON_PACKAGES[@]} -gt 0 ]; then
+        log_info "Instalando pacotes..."
+        if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_ADDON_PACKAGES[@]}"; then
+            log_error "Falha ao instalar pacotes."
+            return 1
+        fi
+    fi
+
+    # Adicione aqui suas personalizações
+    log_info "Aplicando configurações personalizadas..."
+    
+    # Exemplo: Criar arquivo de configuração
+    # cat > "${ADDON_INSTALL_ARG_MOUNTPOINT}/etc/seu-addon.conf" <<EOF
+    # configuracao=valor
+    # EOF
+
+    # Exemplo: Executar comando no chroot
+    # chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" systemctl enable seu-servico
+
+    log_info "Add-on instalado com sucesso."
+}
