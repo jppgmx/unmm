@@ -369,7 +369,11 @@ diskpart_create_partition() {
         diskpart_format_partition "$partition_device" "$fs_type"
     fi
 
-    log_info "Partição '$part_type' criada e formatada com sucesso."
+    if [[ "$format" == true ]]; then
+        log_info "Partição '$part_type' criada e formatada com sucesso."
+    else
+        log_info "Partição '$part_type' criada com sucesso."
+    fi
     echo "$partition_device"
 }
 
