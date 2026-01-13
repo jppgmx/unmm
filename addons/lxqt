@@ -11,12 +11,78 @@ ADDON_DISPLAY_NAME="LXQt Desktop Environment"
 ADDON_VERSION="1.0.0"
 ADDON_DESCRIPTION="Instala o ambiente de desktop LXQt com o básico sem gerenciador de login (GDM). Isso implica sempre usar startx para iniciar a sessão gráfica."
 
-_ADDON_PACKAGES=(
+_LXQT_ADDON_PACKAGES=(
     "xorg" "xinit" "mesa-utils"
-    "lxqt-core" "openbox" "lxqt-policykit"
+    "lxqt-core" "openbox" "obconf" "lxqt-policykit"
     "pulseaudio" "pavucontrol" "alsa-utils" "fonts-noto"
     "qterminal" "qps" "featherpad" "htop" "gvfs-backends" "gvfs-fuse" "eject"
+    "adwaita-qt" "ubuntu-mono" "openbox-themes" "lxqt-themes"
 )
+
+# _setup_lxqt_visuals <mountpoint>
+# Configura temas e visuais padrão do LXQt e OpenBox para todos os usuários.
+# Por padrão, define:
+#   Tema LXQt: Ambiance
+#   Tema de Ícones: Ubuntu-Mono-Dark
+#   Estilo Qt: Adwaita-Dark
+#   Tema OpenBox: Onyx
+#
+# Argumentos:
+#   mountpoint - ponto de montagem do sistema de arquivos raiz onde o LXQt foi instalado
+#
+_setup_lxqt_visuals() {
+    local mountpoint="$1"
+    log_info "Configurando estética padrão do LXQt..."
+    
+    local skel_conf="$mountpoint/etc/skel/.config"
+    
+    # Configurar LXQt (Ícones, Estilo Qt, Tema LXQt)
+    mkdir -p "$skel_conf/lxqt"
+    
+    # Criamos o lxqt.conf definindo os temas solicitados
+    # [General]
+    # theme=Ambiance      -> Tema da barra/painel (Precisa existir em /usr/share/lxqt/themes)
+    # icon_theme=...      -> Ícones das pastas
+    # style=Adwaita-Dark  -> Desenho dos botões/janelas (Qt Style)
+    
+    cat <<EOF > "$skel_conf/lxqt/lxqt.conf"
+[General]
+__user_file__=true
+icon_theme=Ubuntu-Mono-Dark
+theme=Ambiance
+style=Adwaita-Dark
+tool_button_style=ToolButtonTextBesideIcon
+EOF
+
+    # 2. Configurar OpenBox (Decoração de Janela / Bordas)
+    mkdir -p "$skel_conf/openbox"
+    
+    # O OpenBox usa um XML complexo. O jeito seguro não é criar do zero,
+    # mas copiar o padrão do sistema e editar via SED.
+    
+    # O arquivo padrão costuma ficar aqui:
+    local system_rc="$mountpoint/etc/xdg/openbox/rc.xml"
+    local target_rc="$skel_conf/openbox/lxqt-rc.xml" # LXQt busca lxqt-rc.xml preferencialmente
+    
+    if [ -f "$system_rc" ]; then
+        cp "$system_rc" "$target_rc"
+        
+        # O sed abaixo procura o bloco <theme> e substitui o <name> dentro dele
+        # Isso troca o tema padrão (geralmente Clearlooks) para Onyx
+        sed -i '/<theme>/,/<\/theme>/ s|<name>.*</name>|<name>Onyx</name>|' "$target_rc"
+        
+        log_verbose "Tema do OpenBox definido para Onyx."
+    else
+        log_warning "Arquivo de configuração padrão do OpenBox não encontrado. O tema da janela será o default."
+    fi
+
+    # 3. Bônus: Session Config (Para garantir que comece maximizado ou settings)
+    cat <<EOF > "$skel_conf/lxqt/session.conf"
+[General]
+__user_file__=true
+window_manager=openbox
+EOF
+}
 
 #
 #   Parâmetros de um Add-on:
@@ -33,7 +99,7 @@ _ADDON_PACKAGES=(
 #
 addon_install() {
     log_info "Instalando ambiente gráfico LXQt minimal..."
-    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_ADDON_PACKAGES[@]}"; then
+    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_LXQT_ADDON_PACKAGES[@]}"; then
         log_error "Falha ao instalar pacotes do LXQt."
         return 1
     fi
@@ -47,4 +113,8 @@ EOF
     log_verbose "Aplicando permissões ao .xinitrc..."
     chmod +x "${ADDON_INSTALL_ARG_MOUNTPOINT}/home/${ADDON_INSTALL_ARG_USERNAME}/.xinitrc"
     chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" chown "${ADDON_INSTALL_ARG_USERNAME}:${ADDON_INSTALL_ARG_USERNAME}" "/home/${ADDON_INSTALL_ARG_USERNAME}/.xinitrc"
+
+    _setup_lxqt_visuals "$ADDON_INSTALL_ARG_MOUNTPOINT"
+
+    log_info "LXQt instalado com sucesso."
 }
