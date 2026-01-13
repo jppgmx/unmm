@@ -20,6 +20,11 @@ log "=== INICIANDO FIRST BOOT ==="
 
 # 1. Execução dos Payloads
 if [ -d "$SCRIPT_DIR" ]; then
+    if [[ -z "$(ls "$SCRIPT_DIR")" ]]; then
+        log "Diretório de scripts está vazio. Pulando execução."
+    else
+        log "Executando scripts de first boot em $SCRIPT_DIR..."
+    fi
     for script in "$SCRIPT_DIR"/*; do
         if [ -f "$script" ]; then
             log "Executando: $(basename "$script")..."
