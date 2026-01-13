@@ -48,7 +48,8 @@ generate_ovf() {
     log_verbose "Lendo arquivo de licença: $license_file"
     local license_content=""
     if [ -f "$license_file" ]; then
-        license_content=$(cat "$license_file")
+        # Remover sequência ]]> se existir (quebraria o CDATA)
+        license_content=$(cat "$license_file" | sed 's/]]>/]] >/g')
         log_verbose "Licença carregada com sucesso (${#license_content} caracteres)"
     else
         log_warning "Arquivo de licença não encontrado: $license_file"
@@ -73,7 +74,7 @@ generate_ovf() {
         log_verbose "Incluindo seção EULA no manifesto OVF"
         eula_section="  <EulaSection>
     <Info>End-User License Agreement</Info>
-    <License>$license_content</License>
+    <License><![CDATA[$license_content]]></License>
   </EulaSection>"
     fi
     
