@@ -43,7 +43,7 @@ addon_install() {
     log_info "Instalando $ADDON_DISPLAY_NAME..."
     # Instalar pacotes se definidos
 
-    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND update; then
+    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get update; then
         log_error "Falha ao atualizar a lista de pacotes."
         return 1
     fi
