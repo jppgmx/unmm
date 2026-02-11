@@ -140,6 +140,7 @@ CATALOG="base"
 LICENSE_FILE="$ASSETS_DIR/generic_LICENSE"
 ENABLE_VERBOSE=false
 KEEP_ON_FAILURE=false
+ADDONS=()
 
 # Processamento dos argumentos
 while [[ $# -ne 0 ]]; do
@@ -273,7 +274,7 @@ while [[ $# -ne 0 ]]; do
         *)
             CATALOG="$1"
             shift
-            ADDONS=("$@")
+            ADDONS+=("$@")
             break
             ;;
     esac

@@ -270,14 +270,18 @@ _base_grub_install() {
 
     log_info "Determinando a forma de instalação do GRUB..."
     if [[ "$bootmode" == "uefi" || "$bootmode" == "hybrid" ]]; then
-        grub_packages=("grub-efi-amd64" "shim-signed")
+        if [[ "$bootmode" == "hybrid" ]]; then
+            grub_packages+=("grub-efi-amd64-bin" "shim-signed")
+        else
+            grub_packages+=("grub-efi-amd64" "shim-signed")
+        fi
         grub_targets_install+=(
             "EFI: --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck --no-floppy --no-nvram"
         )
     fi
 
     if [[ "$bootmode" == "bios" || "$bootmode" == "hybrid" ]]; then
-        grub_packages=("grub-pc")
+        grub_packages+=("grub-pc")
         grub_targets_install+=(
             "BIOS: --target=i386-pc --recheck --no-floppy $device"
         )
