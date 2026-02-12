@@ -183,6 +183,7 @@ chroot_cleanup() {
     chroot_call_logged "$mountpoint" swapoff -a || log_warning "Falha ao desligar swap."
     log_verbose "Preenchendo swapfile com zeros..."
     chroot_call_logged "$mountpoint" dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress || log_warning "Falha ao preencher swapfile com zeros."
+    log_verbose "Recriando swapfile..."
     chroot_call_logged "$mountpoint" mkswap /swapfile || log_warning "Falha ao recriar swapfile."
 
     log_info "Desmontando sistema..."
