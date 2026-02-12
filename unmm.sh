@@ -42,7 +42,7 @@ cleanup() {
 
     chroot_cleanup
     diskpart_free_all_loop_devices
-    if [[ $# == 0 ]]; then
+    if [[ $# == 0 && "$KEEP_ON_FAILURE" == false ]]; then
         log_info "Deletando imagem incompleta..."
         rm -f "$disk_image_path"
         rm -f "$OUTPUT_PATH/$HOSTNAME.vmdk"
@@ -72,6 +72,7 @@ Opções:
   -u, --username=USERNAME      Define o nome do usuário padrão (padrão: user)
   -p, --password=PASSWORD      Define a senha do usuário padrão (padrão: password)
   -l, --license=LICENSE        Especifica o caminho para o arquivo de licença a ser incluído
+  -k, --keep                   Mantém os arquivos usados em caso de falha na criação da imagem
   -v, --verbose                Habilita logging verboso
   <catalog>                    Nome do catálogo a ser usado (padrão: base)
   [addon1 addon2 ...]          Lista de add-ons a serem aplicados após o catálogo
@@ -138,6 +139,8 @@ PASSWORD="password"
 CATALOG="base"
 LICENSE_FILE="$ASSETS_DIR/generic_LICENSE"
 ENABLE_VERBOSE=false
+KEEP_ON_FAILURE=false
+ADDONS=()
 
 # Processamento dos argumentos
 while [[ $# -ne 0 ]]; do
@@ -255,6 +258,10 @@ while [[ $# -ne 0 ]]; do
                 exit 1
             fi
             ;;
+        -k|--keep)
+            KEEP_ON_FAILURE=true
+            shift
+            ;;
         -v|--verbose)
             ENABLE_VERBOSE=true
             shift
@@ -267,7 +274,7 @@ while [[ $# -ne 0 ]]; do
         *)
             CATALOG="$1"
             shift
-            ADDONS=("$@")
+            ADDONS+=("$@")
             break
             ;;
     esac
@@ -284,6 +291,8 @@ log_verbose "  BOOT_MODE: $BOOT_MODE"
 log_verbose "  HOSTNAME: $HOSTNAME"
 log_verbose "  USERNAME: $USERNAME"
 log_verbose "  PASSWORD: [HIDDEN]"
+log_verbose "  LICENSE_FILE: $LICENSE_FILE"
+log_verbose "  KEEP_ON_FAILURE: $KEEP_ON_FAILURE"
 log_verbose "  CATALOG: $CATALOG"
 log_verbose "  ADDONS: ${ADDONS[*]}"
 
@@ -394,7 +403,7 @@ if [[ "$CREATE_OVA" == true ]]; then
     ova_output_path="$OUTPUT_PATH/$HOSTNAME.ova"
     log_info "Criando arquivo OVA em '$ova_output_path'..."
     diskpart_img_to_vmdk "$disk_image_path" "$OUTPUT_PATH/$HOSTNAME.vmdk"
-    ova_generate_ovf
+    ova_generate "$HOSTNAME" "$OUTPUT_PATH" "$BOOT_MODE" "$LICENSE_FILE"
 
     log_info "Arquivo OVA criado com sucesso em '$ova_output_path'."
 fi
