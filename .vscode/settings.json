@@ -28,5 +28,6 @@
     "**/zshenv": true,
     "**/*.zsh-theme": true
   },
-  "shellcheck.ignoreFileSchemes": ["git", "gitfs", "output"]
+  "shellcheck.ignoreFileSchemes": ["git", "gitfs", "output"],
+  "files.eol": "\n"
 }
