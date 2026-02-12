@@ -267,34 +267,48 @@ _base_grub_install() {
     
     local grub_packages=()
     local grub_targets_install=()
+    local _grub_install_bios=false
+    local _grub_install_uefi=false
 
     log_info "Determinando a forma de instalação do GRUB..."
-    if [[ "$bootmode" == "uefi" || "$bootmode" == "hybrid" ]]; then
-        if [[ "$bootmode" == "hybrid" ]]; then
-            grub_packages+=("grub-efi-amd64-bin" "shim-signed")
-        else
+    case "$bootmode" in
+        "bios")
+            grub_packages+=("grub-pc")
+            _grub_install_bios=true
+            ;;
+        "uefi")
             grub_packages+=("grub-efi-amd64" "shim-signed")
-        fi
-        grub_targets_install+=(
-            "EFI: --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck --no-floppy --no-nvram"
-        )
-    fi
+            _grub_install_uefi=true
+            ;;
+        "hybrid")
+            grub_packages+=("grub-pc" "grub-efi-amd64-bin" "shim-signed")
+            _grub_install_bios=true
+            _grub_install_uefi=true
+            ;;
+        *)
+            log_error "Modo de boot desconhecido: $bootmode"
+            exit 1
+            ;;
+    esac
 
-    if [[ "$bootmode" == "bios" || "$bootmode" == "hybrid" ]]; then
-        grub_packages+=("grub-pc")
+    log_verbose "Instalando pacotes do GRUB para o modo de boot: $bootmode"
+    log_verbose "O seguinte será instalado: ${grub_packages[*]}"
+    log_verbose "GRUB BIOS: $_grub_install_bios"
+    log_verbose "GRUB UEFI: $_grub_install_uefi"
+
+    if [[ "$_grub_install_bios" == true ]]; then
         grub_targets_install+=(
             "BIOS: --target=i386-pc --recheck --no-floppy $device"
         )
     fi
 
-    log_verbose "Instalando pacotes do GRUB: ${grub_packages[*]}"
-    for target in "${grub_targets_install[@]}"; do
-        IFS=": " read -r desc grub_command <<< "$target"
-        log_verbose "Preparando instalação do GRUB para $desc com comando: grub-install $grub_command"
-    done
+    if [[ "$_grub_install_uefi" == true ]]; then
+        grub_targets_install+=(
+            "EFI: --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck --no-floppy --no-nvram"
+        )
+    fi
 
     log_info "Instalando pacotes do GRUB..."
-
     #shellcheck disable=SC2086
     if ! chroot_call_logged "$mountpoint" $APT_GET_COMMAND "${grub_packages[@]}"; then
         log_error "Falha ao instalar pacotes do GRUB."
@@ -312,6 +326,11 @@ _base_grub_install() {
             exit 1
         fi
     done
+
+    log_verbose "Configurando o GRUB para compatibilidade..."
+    chroot_call_logged "$mountpoint" sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
+    chroot_call_logged "$mountpoint" bash -c 'echo "GRUB_GFXMODE=1024x768" >> /etc/default/grub'
+    chroot_call_logged "$mountpoint" bash -c 'echo "GRUB_GFXPAYLOAD_LINUX=keep" >> /etc/default/grub'
 
     log_info "Gerando initramfs..."
     chroot_call_logged "$mountpoint" update-initramfs -u -k all
