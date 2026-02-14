@@ -11,12 +11,154 @@ ADDON_DISPLAY_NAME="LXQt Desktop Environment"
 ADDON_VERSION="1.0.0"
 ADDON_DESCRIPTION="Instala o ambiente de desktop LXQt com o básico sem gerenciador de login (GDM). Isso implica sempre usar startx para iniciar a sessão gráfica."
 
-_ADDON_PACKAGES=(
+# Diretório de assets do addon (relativo ao script)
+_LXQT_ASSETS_DIR="$(dirname "${BASH_SOURCE[0]}")/../assets"
+
+_LXQT_ADDON_PACKAGES=(
     "xorg" "xinit" "mesa-utils"
-    "lxqt-core" "openbox" "lxqt-policykit"
+    "lxqt-core" "openbox" "obconf" "lxqt-policykit"
     "pulseaudio" "pavucontrol" "alsa-utils" "fonts-noto"
     "qterminal" "qps" "featherpad" "htop" "gvfs-backends" "gvfs-fuse" "eject"
+    "adwaita-qt" "lxqt-themes" "papirus-icon-theme"
 )
+
+_LXQT_OPENBOX_THEMES=(
+    "Aura Midnight:/aura-ob-themes/Aura Midnight:/usr/share/themes/Aura Midnight"
+    "Aura Polar:/aura-ob-themes/Aura Polar:/usr/share/themes/Aura Polar"
+)
+
+# _setup_lxqt_visuals <mountpoint>
+# Configura temas e visuais padrão do LXQt e OpenBox para todos os usuários.
+# Copia os arquivos de configuração pré-definidos da pasta assets/config.
+#
+# Configuração aplicada (baseada em VM de referência):
+#   Tema LXQt: Arch-Colors
+#   Tema de Ícones: Papirus-Dark
+#   Estilo Qt: Adwaita-Dark
+#   Tema OpenBox: Aura Midnight
+#   Wallpaper: space.jpg (stretch)
+#
+# Argumentos:
+#   mountpoint - ponto de montagem do sistema de arquivos raiz onde o LXQt foi instalado
+#
+_setup_lxqt_visuals() {
+    local mountpoint="$1"
+    local assets_config="$_LXQT_ASSETS_DIR/config"
+    local assets_styles="$_LXQT_ASSETS_DIR/styles"
+    
+    log_info "Configurando estética padrão do LXQt..."
+    
+    # Verificar se os assets existem
+    if [ ! -d "$assets_config" ]; then
+        log_error "Diretório de configurações não encontrado: $assets_config"
+        return 1
+    fi
+    
+    local skel_conf="$mountpoint/etc/skel/.config"
+    
+    # 1. Instalar temas do OpenBox no sistema
+    log_verbose "Instalando temas OpenBox..."
+    for theme in "${_LXQT_OPENBOX_THEMES[@]}"; do
+        local theme_name theme_src theme_dest
+
+        theme_name=$(echo "$theme" | cut -d':' -f1)
+        theme_src=$(echo "$theme" | cut -d':' -f2)
+        theme_dest=$(echo "$theme" | cut -d':' -f3)
+        
+        log_verbose "Instalando tema OpenBox '$theme_name'..."
+        local ob_theme_src="$assets_styles/$theme_src"
+        local ob_theme_dest="$mountpoint$theme_dest"
+        
+        if [ -d "$ob_theme_src" ]; then
+            mkdir -p "$ob_theme_dest"
+            cp -r "$ob_theme_src"/* "$ob_theme_dest/"
+            log_verbose "Tema '$theme_name' instalado em $theme_dest"
+        else
+            log_warning "Tema OpenBox '$theme_name' não encontrado nos assets."
+        fi
+    done
+    if [ -d "$ob_theme_src" ]; then
+        mkdir -p "$ob_theme_dest"
+        cp -r "$ob_theme_src"/* "$ob_theme_dest/"
+        log_verbose "Tema 'Aura Midnight' instalado em /usr/share/themes/"
+    else
+        log_warning "Tema OpenBox 'Aura Midnight' não encontrado nos assets."
+    fi
+    
+    # 2. Instalar wallpaper no sistema
+    log_verbose "Instalando wallpaper padrão..."
+    local wallpaper_src="$assets_styles/wallpapers/space.jpg"
+    local wallpaper_dest="$mountpoint/usr/share/lxqt/wallpapers"
+    
+    if [ -f "$wallpaper_src" ]; then
+        mkdir -p "$wallpaper_dest"
+        cp "$wallpaper_src" "$wallpaper_dest/"
+        log_verbose "Wallpaper 'space.jpg' instalado em /usr/share/lxqt/wallpapers/"
+    else
+        log_warning "Wallpaper 'space.jpg' não encontrado nos assets."
+    fi
+    
+    # 3. Copiar configurações do LXQt para /etc/skel
+    log_verbose "Copiando configurações do LXQt..."
+    mkdir -p "$skel_conf/lxqt"
+    
+    # Copiar todos os arquivos de configuração do LXQt
+    for conf_file in "$assets_config/lxqt"/*.conf; do
+        if [ -f "$conf_file" ]; then
+            cp "$conf_file" "$skel_conf/lxqt/"
+            log_verbose "Copiado: $(basename "$conf_file")"
+        fi
+    done
+    
+    # 4. Copiar configuração do OpenBox para /etc/skel
+    log_verbose "Copiando configuração do OpenBox..."
+    mkdir -p "$skel_conf/openbox"
+    
+    local ob_rc_src="$assets_config/openbox/rc.xml"
+    if [ -f "$ob_rc_src" ]; then
+        cp "$ob_rc_src" "$skel_conf/openbox/rc.xml"
+        log_verbose "Configuração do OpenBox copiada (rc.xml)"
+    else
+        log_warning "Arquivo rc.xml do OpenBox não encontrado nos assets."
+    fi
+    
+    # 5. Copiar configuração do PCManFM-Qt para /etc/skel (wallpaper + file manager)
+    log_verbose "Copiando configuração do PCManFM-Qt..."
+    mkdir -p "$skel_conf/pcmanfm-qt/lxqt"
+    
+    local pcmanfm_src="$assets_config/pcmanfm-qt/lxqt/settings.conf"
+    if [ -f "$pcmanfm_src" ]; then
+        cp "$pcmanfm_src" "$skel_conf/pcmanfm-qt/lxqt/"
+        log_verbose "Configuração do PCManFM-Qt copiada (inclui wallpaper)"
+    else
+        log_warning "Arquivo settings.conf do PCManFM-Qt não encontrado nos assets."
+    fi
+    
+    # 6. Aplicar configurações para o usuário padrão
+    local default_user_home="$mountpoint/home/${ADDON_INSTALL_ARG_USERNAME}"
+    if [ -d "$default_user_home" ]; then
+        log_verbose "Aplicando configurações visuais para o usuário '${ADDON_INSTALL_ARG_USERNAME}'..."
+        
+        # Criar diretórios de destino
+        mkdir -p "$default_user_home/.config/lxqt"
+        mkdir -p "$default_user_home/.config/openbox"
+        mkdir -p "$default_user_home/.config/pcmanfm-qt/lxqt"
+        
+        # Copiar arquivos de configuração para as pastas corretas
+        cp -r "$skel_conf/lxqt/"* "$default_user_home/.config/lxqt/"
+        cp -r "$skel_conf/openbox/"* "$default_user_home/.config/openbox/"
+        cp -r "$skel_conf/pcmanfm-qt/lxqt/"* "$default_user_home/.config/pcmanfm-qt/lxqt/"
+        
+        # Ajustar permissões
+        chroot_call_logged "$mountpoint" chown -R "${ADDON_INSTALL_ARG_USERNAME}:${ADDON_INSTALL_ARG_USERNAME}" "/home/${ADDON_INSTALL_ARG_USERNAME}/.config"
+        
+        log_verbose "Configurações aplicadas com sucesso para o usuário."
+    else
+        log_warning "Diretório home do usuário padrão não encontrado. Configurações visuais não aplicadas para o usuário ${ADDON_INSTALL_ARG_USERNAME}."
+    fi
+    
+    log_info "Estética do LXQt configurada com sucesso."
+}
 
 #
 #   Parâmetros de um Add-on:
@@ -33,11 +175,20 @@ _ADDON_PACKAGES=(
 #
 addon_install() {
     log_info "Instalando ambiente gráfico LXQt minimal..."
-    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_ADDON_PACKAGES[@]}"; then
+    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_LXQT_ADDON_PACKAGES[@]}"; then
         log_error "Falha ao instalar pacotes do LXQt."
         return 1
     fi
 
+    # Configurar .xinitrc no skel (para novos usuários)
+    log_info "Configurando .xinitrc no skel..."
+    cat > "${ADDON_INSTALL_ARG_MOUNTPOINT}/etc/skel/.xinitrc" <<EOF
+#!/bin/sh
+exec startlxqt
+EOF
+    chmod +x "${ADDON_INSTALL_ARG_MOUNTPOINT}/etc/skel/.xinitrc"
+
+    # Configurar .xinitrc para o usuário padrão
     log_info "Configurando .xinitrc para o usuário padrão..."
     cat > "${ADDON_INSTALL_ARG_MOUNTPOINT}/home/${ADDON_INSTALL_ARG_USERNAME}/.xinitrc" <<EOF
 #!/bin/sh
@@ -47,4 +198,9 @@ EOF
     log_verbose "Aplicando permissões ao .xinitrc..."
     chmod +x "${ADDON_INSTALL_ARG_MOUNTPOINT}/home/${ADDON_INSTALL_ARG_USERNAME}/.xinitrc"
     chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" chown "${ADDON_INSTALL_ARG_USERNAME}:${ADDON_INSTALL_ARG_USERNAME}" "/home/${ADDON_INSTALL_ARG_USERNAME}/.xinitrc"
+
+    # Aplicar configurações visuais (copia arquivos de assets/config)
+    _setup_lxqt_visuals "$ADDON_INSTALL_ARG_MOUNTPOINT"
+
+    log_info "LXQt instalado com sucesso."
 }
