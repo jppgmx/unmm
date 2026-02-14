@@ -116,9 +116,8 @@ _setup_lxqt_visuals() {
     
     local ob_rc_src="$assets_config/openbox/rc.xml"
     if [ -f "$ob_rc_src" ]; then
-        # LXQt busca lxqt-rc.xml preferencialmente
-        cp "$ob_rc_src" "$skel_conf/openbox/lxqt-rc.xml"
-        log_verbose "Configuração do OpenBox copiada (lxqt-rc.xml)"
+        cp "$ob_rc_src" "$skel_conf/openbox/rc.xml"
+        log_verbose "Configuração do OpenBox copiada (rc.xml)"
     else
         log_warning "Arquivo rc.xml do OpenBox não encontrado nos assets."
     fi
@@ -140,10 +139,15 @@ _setup_lxqt_visuals() {
     if [ -d "$default_user_home" ]; then
         log_verbose "Aplicando configurações visuais para o usuário '${ADDON_INSTALL_ARG_USERNAME}'..."
         
-        # Copiar todas as configurações do skel para o usuário
-        cp -r "$skel_conf/lxqt" "$default_user_home/.config/"
-        cp -r "$skel_conf/openbox" "$default_user_home/.config/"
-        cp -r "$skel_conf/pcmanfm-qt" "$default_user_home/.config/"
+        # Criar diretórios de destino
+        mkdir -p "$default_user_home/.config/lxqt"
+        mkdir -p "$default_user_home/.config/openbox"
+        mkdir -p "$default_user_home/.config/pcmanfm-qt/lxqt"
+        
+        # Copiar arquivos de configuração para as pastas corretas
+        cp -r "$skel_conf/lxqt/"* "$default_user_home/.config/lxqt/"
+        cp -r "$skel_conf/openbox/"* "$default_user_home/.config/openbox/"
+        cp -r "$skel_conf/pcmanfm-qt/lxqt/"* "$default_user_home/.config/pcmanfm-qt/lxqt/"
         
         # Ajustar permissões
         chroot_call_logged "$mountpoint" chown -R "${ADDON_INSTALL_ARG_USERNAME}:${ADDON_INSTALL_ARG_USERNAME}" "/home/${ADDON_INSTALL_ARG_USERNAME}/.config"
