@@ -19,7 +19,7 @@ _LXQT_ADDON_PACKAGES=(
     "lxqt-core" "openbox" "obconf" "lxqt-policykit"
     "pulseaudio" "pavucontrol" "alsa-utils" "fonts-noto"
     "qterminal" "qps" "featherpad" "htop" "gvfs-backends" "gvfs-fuse" "eject"
-    "adwaita-qt" "ubuntu-mono" "lxqt-themes" "papirus-icon-theme"
+    "adwaita-qt" "lxqt-themes" "papirus-icon-theme"
 )
 
 _LXQT_OPENBOX_THEMES=(
