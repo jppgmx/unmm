@@ -33,15 +33,27 @@ _REQUIRED_DEPENDENCIES=(
 # check_debian_based
 # Verifica se o sistema operacional é baseado em Debian.
 function check_debian_based() {
-    local id_like=""
+    local id=""
     if [ -f /etc/os-release ]; then
-        id_like=$(grep '^ID_LIKE=' /etc/os-release | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+        id=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+
+        if [ -z "$id" ]; then
+            local id_like
+
+            id_like=$(grep '^ID_LIKE=' /etc/os-release | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+            if [ -z "$id_like" ]; then
+                log_error "Não foi possível determinar a distribuição a partir de /etc/os-release."
+                return 1
+            fi
+
+            id="$id_like"
+        fi
     else
         log_error "Arquivo /etc/os-release não encontrado. Não é possível determinar a distribuição."
         return 1
     fi
 
-    if [[ "$id_like" != *"debian"* ]]; then
+    if [[ "$id" != *"debian"* ]]; then
         log_error "Este script requer uma distribuição baseada em Debian."
         return 1
     fi
