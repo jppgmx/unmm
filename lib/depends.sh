@@ -28,6 +28,8 @@ _REQUIRED_DEPENDENCIES=(
     "grep:grep"
     "sed:sed"                # Vital para substituir XML do OVF
     "sha256sum:coreutils"    # Vital para o Manifesto (.mf)
+
+    "python3:python3"        # ovftool
 )
 
 # check_debian_based
