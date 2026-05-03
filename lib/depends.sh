@@ -9,7 +9,6 @@
 
 _REQUIRED_DEPENDENCIES=(
     # --- Manipulação de Disco e Imagem ---
-    "qemu-img:qemu-utils"
     "wipefs:util-linux"
     "parted:parted"
     "losetup:util-linux"
@@ -30,22 +29,50 @@ _REQUIRED_DEPENDENCIES=(
     "sha256sum:coreutils"    # Vital para o Manifesto (.mf)
 )
 
-# check_debian_based
-# Verifica se o sistema operacional é baseado em Debian.
-function check_debian_based() {
+# Entre distros, há variações em quais pacotes fornecem quais comandos. 
+# Esta seção mapeia os comandos para os pacotes corretos em cada distro.
+_DEBIAN_SPECIFIC_DEPENDENCIES=(
+    "qemu-img:qemu-utils"
+)
+
+_ARCH_SPECIFIC_DEPENDENCIES=(
+    "qemu-img:qemu-img"
+)
+
+_PYTHON_VERSION_REQUIRED="3.11"
+
+function check_os() {
     local id_like=""
+    local id=""
     if [ -f /etc/os-release ]; then
         id_like=$(grep '^ID_LIKE=' /etc/os-release | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+        id=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
     else
         log_error "Arquivo /etc/os-release não encontrado. Não é possível determinar a distribuição."
         return 1
     fi
 
-    if [[ "$id_like" != *"debian"* ]]; then
-        log_error "Este script requer uma distribuição baseada em Debian."
-        return 1
-    fi
+    case "$id:$id_like" in
+        *debian*)
+            echo "deb"
+            return 0
+            ;;
+        *arch*)
+            echo "arch"
+            return 0
+            ;;
+        *)
+            log_error "Distribuição não suportada. Este script requer uma distribuição baseada em Debian ou Arch Linux."
+            return 1
+            ;;
+    esac
+}
 
+# check_if_supports_debootstrap
+# Verifica se o sistema suporta debootstrap, necessário para a construção do sistema.
+function check_if_supports_debootstrap() {
+    local os_type
+    os_type=$(check_os) || return 1
     return 0
 }
 
@@ -55,8 +82,23 @@ function check_debian_based() {
 # pergunta ao usuário se deseja instalá-las automaticamente.
 function check_dependencies() {
     local missing_dependencies=()
+    local deps=()
+    local os_type
+    os_type=$(check_os) || return 1
 
-    for dependency in "${_REQUIRED_DEPENDENCIES[@]}"; do
+    log_verbose "Verificando dependências para a distribuição detectada: $os_type"
+    if [[ "$os_type" == "deb" ]]; then
+        log_verbose "Distribuição é Debian-based."
+        deps=("${_REQUIRED_DEPENDENCIES[@]}" "${_DEBIAN_SPECIFIC_DEPENDENCIES[@]}")
+    elif [[ "$os_type" == "arch" ]]; then
+        log_verbose "Distribuição é Arch-based."
+        deps=("${_REQUIRED_DEPENDENCIES[@]}" "${_ARCH_SPECIFIC_DEPENDENCIES[@]}")
+    else
+        log_error "Tipo de distribuição desconhecido. Não é possível determinar dependências específicas."
+        return 1
+    fi
+
+    for dependency in "${deps[@]}"; do
         local cmd="${dependency%%:*}"
         local pkg="${dependency##*:}"
 
@@ -77,13 +119,25 @@ function check_dependencies() {
             read -r response
             if [[ "$response" == "s" || "$response" == "S" ]]; then
                 log_info "Tentando instalar dependências ausentes..."
-                if ! exec_logged "apt-get" update; then
-                    log_error "Falha ao atualizar o índice do apt-get. Por favor, verifique sua conexão com a internet e tente novamente."
-                    return 1
-                fi
-                if ! exec_logged "apt-get" install -y --no-install-recommends "${missing_dependencies[@]}"; then
-                    log_error "Falha ao instalar algumas dependências. Por favor, instale-as manualmente."
-                    return 1
+                log_verbose "A selecionar o gerenciador de pacotes correto para a instalação..."
+                if [[ "$os_type" == "deb" ]]; then
+                    if ! exec_logged "apt-get" apt-get update; then
+                        log_error "Falha ao atualizar o índice do apt-get. Por favor, verifique sua conexão com a internet e tente novamente."
+                        return 1
+                    fi
+                    if ! exec_logged "apt-get" apt-get install -y --no-install-recommends "${missing_dependencies[@]}"; then
+                        log_error "Falha ao instalar algumas dependências. Por favor, instale-as manualmente."
+                        return 1
+                    fi
+                elif [[ "$os_type" == "arch" ]]; then
+                    if ! exec_logged "pacman" pacman -Sy --noconfirm; then
+                        log_error "Falha ao atualizar o índice do pacman. Por favor, verifique sua conexão com a internet e tente novamente."
+                        return 1
+                    fi
+                    if ! exec_logged "pacman" pacman -S --noconfirm "${missing_dependencies[@]}"; then
+                        log_error "Falha ao instalar algumas dependências. Por favor, instale-as manualmente."
+                        return 1
+                    fi
                 fi
 
                 log_info "Dependências instaladas com sucesso."

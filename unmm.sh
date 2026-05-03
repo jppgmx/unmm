@@ -9,48 +9,12 @@
 #
 
 set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CATALOG_DIR="$SCRIPT_DIR/catalog"
 LIB_DIR="$SCRIPT_DIR/lib"
 ADDONS_DIR="$SCRIPT_DIR/addons"
 ASSETS_DIR="$SCRIPT_DIR/assets"
-
-if [[ "$EUID" -ne 0 ]]; then
-    echo "This script must be run as root."
-    exit 1
-fi
-
-# shellcheck source=lib/common.sh
-source "$LIB_DIR/common.sh" || exit 1
-# shellcheck source=lib/logging.sh
-source "$LIB_DIR/logging.sh" || exit 1
-# shellcheck source=lib/depends.sh
-source "$LIB_DIR/depends.sh" || exit 1
-# shellcheck source=lib/diskpart.sh
-source "$LIB_DIR/diskpart.sh" || exit 1
-# shellcheck source=lib/chroot.sh
-source "$LIB_DIR/chroot.sh" || exit 1
-# shellcheck source=lib/ova.sh
-source "$LIB_DIR/ova.sh" || exit 1
-
-check_debian_based || exit 1
-check_dependencies || exit 1
-
-# shellcheck disable=SC2120
-cleanup() {
-    trap - EXIT INT TERM ERR
-
-    chroot_cleanup
-    diskpart_free_all_loop_devices
-    if [[ $# == 0 && "$KEEP_ON_FAILURE" == false ]]; then
-        log_info "Deletando imagem incompleta..."
-        rm -f "$disk_image_path"
-        rm -f "$OUTPUT_PATH/$HOSTNAME.vmdk"
-        rm -f "$OUTPUT_PATH/$HOSTNAME.ovf"
-        rm -f "$OUTPUT_PATH/$HOSTNAME.mf"
-        rm -f "$OUTPUT_PATH/$HOSTNAME.ova"
-    fi
-}
 
 # help
 # Printa a mensagem de ajuda
@@ -122,10 +86,11 @@ Glossário:
 EOF
 }
 
-if [[ $# -eq 0 ]]; then
-    help
-    exit 0
-fi
+# Fazer sourcing dos essenciais
+# shellcheck source=lib/common.sh
+source "$LIB_DIR/common.sh" || (echo "Falha ao tentar source common.sh"; exit 1)
+# shellcheck source=lib/logging.sh
+source "$LIB_DIR/logging.sh" || (echo "Falha ao tentar source logging.sh"; exit 1)
 
 # Valores padrão
 CREATE_OVA=false
@@ -279,6 +244,40 @@ while [[ $# -ne 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$EUID" -ne 0 ]]; then
+    echo "** Script deve ser executado como superusuário."
+    exit 1
+fi
+
+# shellcheck source=lib/depends.sh
+source "$LIB_DIR/depends.sh" || (echo "Falha ao tentar source depends.sh"; exit 1)
+# shellcheck source=lib/diskpart.sh
+source "$LIB_DIR/diskpart.sh" || (echo "Falha ao tentar source diskpart.sh"; exit 1)
+# shellcheck source=lib/chroot.sh
+source "$LIB_DIR/chroot.sh" || (echo "Falha ao tentar source chroot.sh"; exit 1)
+# shellcheck source=lib/ova.sh
+source "$LIB_DIR/ova.sh" || (echo "Falha ao tentar source ova.sh"; exit 1)
+
+check_if_supports_debootstrap || exit 1
+check_dependencies || exit 1
+
+# shellcheck disable=SC2120
+cleanup() {
+    trap - EXIT INT TERM ERR
+
+    chroot_cleanup
+    diskpart_free_all_loop_devices
+    if [[ $# == 0 && "$KEEP_ON_FAILURE" == false ]]; then
+        log_info "Deletando imagem incompleta..."
+        rm -f "$disk_image_path"
+        rm -f "$OUTPUT_PATH/$HOSTNAME.vmdk"
+        rm -f "$OUTPUT_PATH/$HOSTNAME.ovf"
+        rm -f "$OUTPUT_PATH/$HOSTNAME.mf"
+        rm -f "$OUTPUT_PATH/$HOSTNAME.ova"
+    fi
+}
+
 
 trap cleanup EXIT INT TERM ERR
 
