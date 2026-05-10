@@ -29,5 +29,14 @@
     "**/*.zsh-theme": true
   },
   "shellcheck.ignoreFileSchemes": ["git", "gitfs", "output"],
-  "files.eol": "\n"
+  "files.eol": "\n",
+  "python.testing.unittestArgs": [
+    "-v",
+    "-s",
+    "./tests",
+    "-p",
+    "test_*.py"
+  ],
+  "python.testing.pytestEnabled": false,
+  "python.testing.unittestEnabled": true
 }

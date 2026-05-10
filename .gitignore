@@ -1,4 +1,6 @@
 output/
+build/
 __pycache__/
 *.pyc
 *.ova
+.venv
