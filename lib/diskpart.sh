@@ -7,71 +7,290 @@
 # Sob licença MIT
 #
 
-declare -ga TRACKED_LOSETUP_DEVICES
-if [[ -z "${TRACKED_LOSETUP_DEVICES+x}" ]]; then
-    TRACKED_LOSETUP_DEVICES=()
+if [[ -n "${UNMM_LIB_DISKPART_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_DISKPART_LOADED=true
+_diskpart_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#shellcheck source=logging.sh
+source "${_diskpart_lib_dir}/logging.sh"
+# shellcheck source=uc.sh
+source "${_diskpart_lib_dir}/uc.sh"
+unset _diskpart_lib_dir
+
+declare -ga TRACKED_DISKPART_DEVICES
+if [[ -z "${TRACKED_DISKPART_DEVICES+x}" ]]; then
+    TRACKED_DISKPART_DEVICES=()
 fi
 
-# Valida o formato da unidade de tamanho comuns na maioria das ferramentas de disco (Ex: 500M, 10G)
-_validate_unit() {
-    local size_regex='^[0-9]+[MG]$'
-    if ! [[ $1 =~ $size_regex ]]; then
-        log_error "Tamanho inválido: $1. Use o formato <número><M|G> (ex: 500M, 10G)."
+_diskpart_is_tracked_device() {
+    local device="$1"
+    if [[ " ${TRACKED_DISKPART_DEVICES[*]} " == *" $device "* ]]; then
+        return 0
+    fi
+    return 1
+}
+
+_diskpart_parse_disk_image() {
+    local disk_image="$1"
+    local image_path backend
+
+    if [[ "$disk_image" == *:* ]]; then
+        IFS=':' read -r image_path backend <<< "$disk_image"
+    else
+        image_path="$disk_image"
+        backend=""
+    fi
+
+    if [[ -z "$image_path" ]]; then
+        log_error "DiskImage invalido: '$disk_image'"
         exit 1
+    fi
+
+    echo "$image_path:$backend"
+}
+
+_diskpart_parse_disk_device() {
+    local disk_device="$1"
+    local device image backend
+
+    if [[ "$disk_device" == *:*:* ]]; then
+        IFS=':' read -r device image backend <<< "$disk_device"
+    else
+        device="$disk_device"
+        image=""
+        backend=""
+    fi
+
+    if [[ -z "$device" ]]; then
+        log_error "DiskDevice invalido: '$disk_device'"
+        exit 1
+    fi
+
+    echo "$device:$image:$backend"
+}
+
+_diskpart_guess_format_from_path() {
+    local path="$1"
+
+    case "$path" in
+        *.qcow2)
+            echo "qcow2"
+            ;;
+        *.img)
+            echo "raw"
+            ;;
+        *.vmdk)
+            echo "vmdk"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+_diskpart_infer_backend_from_device() {
+    local device="$1"
+
+    if [[ "$device" =~ /dev/nbd[0-9]+ ]]; then
+        echo "qcow"
+        return
+    fi
+    if [[ "$device" =~ /dev/loop[0-9]+ ]]; then
+        echo "raw"
+        return
+    fi
+
+    echo ""
+}
+
+_diskpart_run_udev_settle() {
+    if use_udev_settle; then
+        exec_logged "DISKPART" udevadm settle
     fi
 }
 
-# Converte MB para MiB
-_mb_to_mib() {
-    local size_in_mb="${1%MB}"
-    local size_in_mib=$((size_in_mb * 1024 * 1024 / 1048576))
-    echo "${size_in_mib}MiB"
+_diskpart_run_partprobe() {
+    local device="$1"
+    if use_partprobe; then
+        exec_logged "DISKPART" partprobe "$device"
+    fi
 }
 
-# Converte MiB para MB
-_mib_to_mb() {
-    local size_in_mib="${1%MiB}"
-    local size_in_mb=$((size_in_mib * 1048576 / 1024 / 1024))
-    echo "${size_in_mb}MB"
+# Não há definição de typedefs em Shell Script, mas considere os seguintes termos:
+#   - DiskImage: Refere-se a uma string no formato "ARQUIVO:BACKEND", onde:
+#       - ARQUIVO é o caminho para a imagem de disco (ex: /path/to/disk.qcow2)
+#       - BACKEND é o tipo de backend usado para criar a imagem (ex: qcow ou raw).
+#   - DiskDevice: Refere-se a uma string no formato "DISPOSITIVO:ARQUIVO:BACKEND", onde:
+#       - DISPOSITIVO é o caminho para o dispositivo de disco (ex: /dev/nbd0)
+#       - ARQUIVO é o caminho para a imagem de disco (ex: /path/to/disk.qcow2)
+#       - BACKEND é o tipo de backend usado para criar a imagem (ex: qcow ou raw).
+#
+# Para os próximos comentários dessa lib, usaremos esses termos.
+#
+
+# backend
+# Obtém o backend de manipulação de disco configurado (qcow ou raw).
+# Retorna:
+#   O backend configurado ou sai com erro se o valor for inválido.
+backend() {
+    local backend="${UNMM_LIB_DISKPART_BACKEND:-qcow}"
+    if [[ ! "$backend" =~ ^(qcow|raw)$ ]]; then
+        log_error "Backend inválido: $backend. Use 'qcow' ou 'raw'."
+        log_error "Consulte unmm.conf para configurar."
+        exit 1
+    fi
+
+    echo "$backend"
 }
 
-# Converte unidades K, M, G para MiB
-_unit_to_mib() {
-    local size="$1"
-    local number unit
-    number=$(echo "$size" | sed -E 's/[a-zA-Z]+//g')
-    unit=$(echo "$size" | sed -E 's/[0-9]+//g' | tr '[:lower:]' '[:upper:]')
-
-    case "$unit" in
-        K*)
-            local size_in_mib=$((number / 1024))
-            echo "${size_in_mib}MiB"
+# backend_extension
+# Retorna a extensão de arquivo apropriada para o backend de manipulação de disco configurado
+# 
+# Retorna: 
+#   - "qcow2" para o backend qcow;
+#   - "img" para o backend raw. 
+# Sai com erro se o backend for desconhecido.
+backend_extension() {
+    case "$(backend)" in
+        qcow)
+            echo "qcow2"
             ;;
-        M*)
-            echo "${number}MiB"
-            ;;
-        G*)
-            local size_in_mib=$((number * 1024))
-            echo "${size_in_mib}MiB"
+        raw)
+            echo "img"
             ;;
         *)
-            log_error "Unidade desconhecida: $unit. Use K, M ou G."
+            log_error "Backend desconhecido: $(backend)"
             exit 1
             ;;
     esac
 }
 
-# diskpart_create_raw_disk <output_path> <size>
+# use_partprobe
+# Checa se o uso do partprobe após a criação de partições está habilitado.
+#
+# Retorna:
+#   0 (sucesso) se partprobe deve ser usado, ou 1 se não.
+use_partprobe() {
+    local use_probe="${UNMM_LIB_DISKPART_PARTPROBE_AFTER_PARTITION:-true}"
+    if [[ "$use_probe" == true ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# use_udev_settle
+# Checa se o uso do udev settle após a criação de partições está habilitado.
+#
+# Retorna:
+#   0 (sucesso) se udevadm settle deve ser usado, ou 1 se não.
+use_udev_settle() {
+    local use_udev="${UNMM_LIB_DISKPART_UDEV_SETTLE:-true}"
+    if [[ "$use_udev" == true ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# _validate_size <size>
+# Valida um tamanho usando unicalc, aceitando unidades SI/IEC e bits/bytes.
+#
+# Argumentos:
+#   size - O tamanho a ser validado (ex: "500M", "10G", "1GiB")
+#
+# Retorna:
+#   Nada ou erro se o tamanho for inválido.
+_validate_size() {
+    local size="$1"
+    if ! uc_convert "$size" B >/dev/null 2>&1; then
+        log_error "Tamanho inválido: $size. Use uma unidade válida (ex: 500M, 10G, 1GiB)."
+        exit 1
+    fi
+}
+
+# diskpart_filename <name>
+# Gera um nome de arquivo para a imagem de disco com a extensão correta do backend
+#
+# Argumentos:
+#   name - O nome base para o arquivo de imagem de disco (sem extensão)
+#
+# Retorna:
+#   O nome do arquivo com a extensão apropriada para o backend configurado.
+#   Ex.: diskpart_filename "disk" -> "disk.qcow2" para backend qcow, ou "disk.img" para backend raw.
+diskpart_filename() {
+    local name="$1"
+    local ext
+    ext=$(backend_extension)
+    echo "${name}.${ext}"
+}
+
+# diskpart_create_disk <output_path> <size>
+# Cria uma imagem de disco usando o backend configurado
+#
+# Argumentos:
+#   output_path - Caminho onde a imagem de disco será criada
+#   size        - Tamanho da imagem de disco (ex: 500M, 10G)
+#
+# Retorna:
+#   Um DiskImage se criado com êxito, ou sai com erro se a criação falhar.
+#
+diskpart_create_disk() {
+    local output_path="$1"
+    local size="$2"
+
+    case "$(backend)" in
+        qcow)
+            _diskpart_create_qcow_disk "$output_path" "$size"
+            echo "$output_path:qcow"
+            ;;
+        raw)
+            _diskpart_create_raw_disk "$output_path" "$size"
+            echo "$output_path:raw"
+            ;;
+        *)
+            log_error "Backend desconhecido: $(backend)"
+            exit 1
+            ;;
+    esac
+}
+
+# _diskpart_create_qcow_disk <output_path> <size>
+# Cria uma imagem de disco QCOW2 pré-alocada
+#
+# Argumentos:
+#   output_path - Caminho onde a imagem de disco será criada
+#   size        - Tamanho da imagem de disco (ex: 500M, 10G)
+#
+# Retorna:
+#   0 se a imagem de disco foi criada com êxito, ou sai com erro se a criação falhar.
+_diskpart_create_qcow_disk() {
+    local output_path="$1"
+    local size="$2"
+
+    _validate_size "$size"
+
+    log_info "Criando disco QCOW2 em '$output_path' com tamanho '$size'..."
+    mkdir -p "$(dirname "$output_path")"
+    exec_logged "QEMU_IMAGE" qemu-img create -f qcow2 "$output_path" "$size"
+    log_info "Disco criado com sucesso."
+}
+
+# _diskpart_create_raw_disk <output_path> <size>
 # Cria uma imagem de disco RAW pré-alocada
 #
 # Argumentos:
 #   output_path - Caminho onde a imagem de disco será criada
 #   size        - Tamanho da imagem de disco (ex: 500M, 10G)
-diskpart_create_raw_disk() {
+#
+# Retorna:
+#   0 se a imagem de disco foi criada com êxito, ou sai com erro se a criação falhar.
+_diskpart_create_raw_disk() {
     local output_path="$1"
     local size="$2"
 
-    _validate_unit "$size"
+    _validate_size "$size"
 
     log_info "Criando disco pré-alocado em '$output_path' com tamanho '$size'..."
     mkdir -p "$(dirname "$output_path")"
@@ -79,97 +298,269 @@ diskpart_create_raw_disk() {
     log_info "Disco criado com sucesso."
 }
 
-# diskpart_setup_loop_device <disk_image>
-# Configura um dispositivo loop para a imagem de disco fornecida
+# diskpart_create_device <disk_image> [track_device]
+# Cria um dispositivo para a imagem de disco fornecida
 #
 # Argumentos:
-#   disk_image - Caminho para a imagem de disco
+#   disk_image - Um DiskImage para criar o dispositivo.
+#   track_device - Flag para rastrear o dispositivo (opcional)
 #
 # Retorna:
-#   O caminho do dispositivo loop configurado
-diskpart_setup_loop_device() {
+#   Um DiskDevice com o dispositivo criado.
+diskpart_create_device() {
+    local disk_image="$1"
+    local track_device="${2:-false}"
+
+    local parsed image_path backend
+    parsed=$(_diskpart_parse_disk_image "$disk_image")
+    IFS=':' read -r image_path backend <<< "$parsed"
+
+    if [[ ! -f "$image_path" ]]; then
+        log_error "A imagem de disco '$image_path' não existe."
+        exit 1
+    fi
+
+    log_verbose "Criando dispositivo para a imagem de disco '$image_path' usando o backend '$backend'..."
+
+    local ext
+    ext=$(backend_extension)
+
+    if [[ ! "$image_path" = *.$ext ]]; then
+        log_warning "A extensão do arquivo '$image_path' não corresponde à extensão esperada '$ext' para o backend '$(backend)'."
+        log_warning "Isso pode indicar um erro de configuração ou um arquivo incorreto. Verifique seu unmm.conf e os arquivos de imagem de disco."
+    fi
+
+    local disk_device
+    case "$backend" in
+        qcow)
+            log_verbose "Usando backend QCOW para criar dispositivo."
+            disk_device=$(_diskpart_create_device_qcow "$image_path")
+            ;;
+        raw)
+            log_verbose "Usando backend RAW para criar dispositivo."
+            disk_device=$(_diskpart_create_device_raw "$image_path")
+            ;;
+        *)
+            log_error "Backend desconhecido: $backend"
+            exit 1
+            ;;
+    esac
+
+    log_verbose "Dispositivo criado: $disk_device"
+    if [[ -z "$disk_device" ]]; then
+        log_error "Falha ao criar dispositivo para a imagem de disco '$image_path' usando o backend '$backend'."
+        exit 1
+    fi
+
+    if [[ "$track_device" == true ]]; then
+        diskpart_track_device "$disk_device"
+    fi
+    echo "$disk_device"
+}
+
+# _diskpart_create_device_qcow <disk_image>
+# Cria um dispositivo para uma imagem de disco QCOW2 usando qemu-nbd
+#
+# Argumentos:
+#   disk_image - Um DiskImage para criar o dispositivo.
+#
+# Retorna:
+#   Um DiskDevice com o dispositivo criado, ou sai com erro se a criação falhar.
+_diskpart_create_device_qcow() {
+    local image_path="$1"
+
+    log_verbose "Ativando módulo nbd para manipulação de disco QCOW2..."
+    if ! modprobe nbd nbds_max=16 max_part=16; then
+        log_error "Falha ao carregar o módulo nbd. Verifique se você tem permissões adequadas e se o módulo está disponível."
+        exit 1
+    fi
+
+    local nbds_max part_max
+    nbds_max=$(cat /sys/module/nbd/parameters/nbds_max)
+    part_max=$(cat /sys/module/nbd/parameters/max_part)
+    log_verbose "Configurações do nbd: nbds_max=$nbds_max, max_part=$part_max"
+
+    if [[ "$nbds_max" -lt 1 ]]; then
+        log_error "Não há dispositivos nbd disponíveis para uso. nbds_max é $nbds_max."
+        exit 1
+    fi
+
+    if [[ "$part_max" -lt 3 ]]; then
+        log_error "O número máximo de partições por dispositivo nbd é muito baixo para uso. max_part é $part_max."
+        log_error "Considere aumentar max_part para pelo menos 3 para garantir funcionalidade adequada."
+        exit 1
+    fi
+
+    log_verbose "Procurando por dispositivo nbd disponível..."
+    local result=""
+    for i in $(seq 0 $((nbds_max - 1))); do
+        local nbd_device="/dev/nbd$i"
+        local sys_nbd_device="/sys/block/nbd$i"
+
+        log_verbose "Verificando dispositivo nbd: $nbd_device..."
+        log_verbose "Verificando se '$nbd_device' está em uso via pid..."
+        if [[ -s "$sys_nbd_device/pid" ]]; then
+            local pid
+            pid=$(cat "$sys_nbd_device/pid")
+            log_verbose "Dispositivo nbd '$nbd_device' está em uso por PID $pid. Pulando."
+            continue
+        fi
+
+        log_verbose "Tentando conectar '$image_path' ao dispositivo nbd '$nbd_device'..."
+        if exec_logged2 "qemu_nbd" qemu-nbd --connect="$nbd_device" --fork "$image_path"; then
+            log_info "Imagem de disco '$image_path' conectada com sucesso ao dispositivo nbd '$nbd_device'."
+            result="$nbd_device:$image_path:qcow"
+            break
+        else
+            log_warning "Falha ao conectar '$image_path' ao dispositivo nbd '$nbd_device'. Tentando próximo dispositivo nbd..."
+        fi
+    done
+
+    if [[ -n "$result" ]]; then
+        log_verbose "Dispositivo nbd disponível encontrado e conectado: $result"
+        echo "$result"
+        return 0
+    fi
+
+    log_error "Não foi possível conectar a imagem '$image_path' a nenhum dispositivo nbd disponível."
+    log_error "Verifique se há dispositivos nbd livres e se você tem permissões adequadas."
+    exit 1
+}
+
+# _diskpart_create_device_raw <disk_image>
+# Cria um dispositivo raw para a imagem de disco fornecida com losetup.
+#
+# Argumentos:
+#   disk_image - Um DiskImage para criar o dispositivo.
+#
+# Retorna:
+#   Um DiskDevice com o dispositivo criado, ou sai com erro se a criação falhar.
+_diskpart_create_device_raw() {
     local disk_image="$1"
 
     log_info "Configurando dispositivo loop para a imagem de disco '$disk_image'..."
     local loop_device
     loop_device=$(losetup --show -fP "$disk_image")
     log_info "Dispositivo loop configurado: $loop_device"
-    echo "$loop_device"
+    echo "$loop_device:$disk_image:raw"
 }
 
-# diskpart_track_loop_device <loop_device>
-# Rastreia um dispositivo loop para liberação posterior
+# diskpart_track_device <disk_device>
+# Rastreia um dispositivo do diskpart para liberação posterior
 #
 # Argumentos:
-#   loop_device - Caminho do dispositivo loop a ser rastreado
-diskpart_track_loop_device() {
-    local loop_device="$1"
+#   disk_device - Um DiskDevice para ser rastreado.
+diskpart_track_device() {
+    local disk_device="$1"
 
-    if [[ ! "$loop_device" == /dev/loop* ]]; then
-        log_error "Isso não parece ser um dispositivo loop válido: $loop_device"
+    local parsed device image backend
+    parsed=$(_diskpart_parse_disk_device "$disk_device")
+    IFS=':' read -r device image backend <<< "$parsed"
+
+    if [[ ! "$device" =~ /dev/(loop|nbd)[0-9]+ ]]; then
+        log_error "Isso não parece ser um dispositivo do diskpart: $disk_device"
         exit 1
     fi
 
-    if [[ " ${TRACKED_LOSETUP_DEVICES[*]} " == *" $loop_device "* ]]; then
-        log_verbose "Dispositivo loop '$loop_device' já está sendo rastreado."
+    if _diskpart_is_tracked_device "$device"; then
+        log_verbose "Dispositivo '$device' já está sendo rastreado."
         return
     fi
 
-    TRACKED_LOSETUP_DEVICES+=("$loop_device")
-    log_verbose "Dispositivo loop rastreado: $loop_device"
+    TRACKED_DISKPART_DEVICES+=("$device")
+    log_verbose "Dispositivo adicionado ao rastreamento: $device"
 }
 
-# diskpart_untrack_loop_device <loop_device>
-# Para de rastrear um dispositivo loop
+# diskpart_untrack_device <disk_device>
+# Para de rastrear um dispositivo do diskpart
 #
 # Argumentos:
-#   loop_device - Caminho do dispositivo loop a ser desrastreado
-diskpart_untrack_loop_device() {
-    local loop_device="$1"
+#   disk_device - Um DiskDevice para ser removido do rastreamento
+diskpart_untrack_device() {
+    local disk_device="$1"
 
-    if [[ ! "$loop_device" == /dev/loop* ]]; then
-        log_error "Isso não parece ser um dispositivo loop válido: $loop_device"
+    local parsed device image backend
+    parsed=$(_diskpart_parse_disk_device "$disk_device")
+    IFS=':' read -r device image backend <<< "$parsed"
+
+    if [[ ! "$device" =~ /dev/(loop|nbd)[0-9]+ ]]; then
+        log_error "Isso não parece ser um dispositivo do diskpart: $disk_device"
         exit 1
     fi
 
-    if [[ ! " ${TRACKED_LOSETUP_DEVICES[*]} " == *" $loop_device "* ]]; then
-        log_verbose "Dispositivo loop '$loop_device' não está sendo rastreado."
+    if ! _diskpart_is_tracked_device "$device"; then
+        log_verbose "Dispositivo '$device' não está sendo rastreado."
         return
     fi
 
-    TRACKED_LOSETUP_DEVICES=("${TRACKED_LOSETUP_DEVICES[@]/$loop_device}")
-    log_verbose "Dispositivo loop não rastreado: $loop_device"
+    TRACKED_DISKPART_DEVICES=("${TRACKED_DISKPART_DEVICES[@]/$device}")
+    log_verbose "Dispositivo removido do rastreamento: $device"
 }
 
-# diskpart_free_loop_device <loop_device>
-# Libera um dispositivo loop específico
+# diskpart_free_device <disk_device>
+# Libera um dispositivo do diskpart específico
 #
 # Argumentos:
-#   loop_device - Caminho do dispositivo loop a ser liberado
-diskpart_free_loop_device() {
-    local loop_device="$1"
-    log_info "Liberando dispositivo loop: $loop_device"
-    exec_logged "DISKPART" losetup -d "$loop_device"
-    TRACKED_LOSETUP_DEVICES=("${TRACKED_LOSETUP_DEVICES[@]/$loop_device}")
-    log_info "Dispositivo loop '$loop_device' liberado com sucesso."
+#   disk_device - Um DiskDevice para ser liberado
+diskpart_free_device() {
+    local disk_device="$1"
+
+    local parsed device image backend
+    parsed=$(_diskpart_parse_disk_device "$disk_device")
+    IFS=':' read -r device image backend <<< "$parsed"
+
+    if [[ -z "$backend" ]]; then
+        backend=$(_diskpart_infer_backend_from_device "$device")
+    fi
+
+    log_verbose "Liberando dispositivo '$device' para a imagem '$image'..."
+    case "$backend" in
+        qcow)
+            log_verbose "Usando backend QCOW para liberar dispositivo."
+            exec_logged "DISKPART" qemu-nbd --disconnect "$device"
+
+            local device_name
+            device_name=$(basename "$device")
+            while [[ -s "/sys/block/$device_name/pid" ]]; do
+                log_verbose "Aguardando o dispositivo nbd '$device' ser liberado..."
+                sleep 1
+            done
+            log_verbose "Dispositivo nbd '$device' liberado com sucesso."
+            ;;
+        raw)
+            log_verbose "Usando backend RAW para liberar dispositivo."
+            exec_logged "DISKPART" losetup -d "$device"
+            ;;
+        *)
+            log_error "Backend desconhecido: $backend"
+            exit 1
+            ;;
+    esac
+
+    if _diskpart_is_tracked_device "$device"; then
+        log_verbose "Removendo dispositivo '$device' do rastreamento após liberação."
+        diskpart_untrack_device "$device"
+        return
+    fi
+    log_info "Dispositivo '$device' liberado com sucesso."
 }
 
-# diskpart_free_all_loop_devices
-# Libera todos os dispositivos loop rastreados
-diskpart_free_all_loop_devices() {
-    log_verbose "Liberando dispositivos loop rastreados..."
-    log_verbose "Dispositivos rastreados: ${TRACKED_LOSETUP_DEVICES[*]}"
-    for loop_dev in "${TRACKED_LOSETUP_DEVICES[@]}"; do
-        log_verbose "Verificando dispositivo loop: $loop_dev"
-        if losetup "$loop_dev" &> /dev/null; then
-            log_verbose "Liberando dispositivo loop: $loop_dev"
-            exec_logged "DISKPART" losetup -d "$loop_dev"
-        else
-            log_warning "Dispositivo loop '$loop_dev' já está liberado."
-        fi
+# diskpart_free_all_disk_devices
+# Libera todos os dispositivos do diskpart rastreados
+diskpart_free_all_devices() {
+    if [[ ${#TRACKED_DISKPART_DEVICES[@]} -eq 0 ]]; then
+        log_verbose "Nenhum dispositivo do diskpart rastreado para liberar."
+        return
+    fi
+
+    log_verbose "Liberando dispositivos do diskpart rastreados..."
+    log_verbose "Dispositivos rastreados: ${TRACKED_DISKPART_DEVICES[*]}"
+    for disk_device in "${TRACKED_DISKPART_DEVICES[@]}"; do
+        log_verbose "Verificando dispositivo do diskpart: $disk_device"
+        diskpart_free_device "$disk_device"
     done
-    TRACKED_LOSETUP_DEVICES=()
-    log_verbose "Todos os dispositivos loop rastreados foram liberados."
+    TRACKED_DISKPART_DEVICES=()
+    log_verbose "Todos os dispositivos do diskpart rastreados foram liberados."
 }
 
 # diskpart_create_partition_table <device> <part_schema>
@@ -182,8 +573,8 @@ diskpart_create_partition_table() {
     local device="$1"
     local part_schema="$2"
 
-    log_verbose "Desativando udev e sincronizando dados antes de particionar..."
-    exec_logged "DISKPART" udevadm settle
+    log_verbose "Sincronizando dados antes de particionar..."
+    _diskpart_run_udev_settle
     sync
 
     log_info "Deletando tudo em '$device' antes de criar a tabela de partições..."
@@ -209,6 +600,9 @@ diskpart_create_partition_table() {
         log_error "Falha ao criar tabela de partições '$part_schema' em '$device'."
         exit 1
     fi
+
+    _diskpart_run_partprobe "$device"
+    _diskpart_run_udev_settle
     log_info "Tabela de partições criada com sucesso."
 }
 
@@ -371,6 +765,9 @@ diskpart_create_partition() {
     #shellcheck disable=SC2086
     exec_logged "DISKPART" parted -s "$device" $parted_command
 
+    _diskpart_run_partprobe "$device"
+    _diskpart_run_udev_settle
+
     local last_partition_number
     last_partition_number=$(diskpart_get_last_partition "$device" | cut -d';' -f1 | cut -d'=' -f2)
     log_verbose "Número da partição criada: $last_partition_number"
@@ -424,7 +821,7 @@ diskpart_create_image_mbr_layout() {
 # Atalho para criar layout GPT completo em uma imagem de disco
 # Argumentos:
 #   device   - Dispositivo onde o layout será criado
-#   ishybrid - Se true, cria uma partição MBR adicional para suporte híbrido
+#   ishybrid - Se true, cria uma partição BIOS GRUB adicional para suporte híbrido
 diskpart_create_image_gpt_layout() {
     local device="$1"
     local ishybrid="$2"
@@ -438,13 +835,13 @@ diskpart_create_image_gpt_layout() {
     local mbr_partition efi_partition system_partition
     
     if [[ "$ishybrid" == true ]]; then
-        log_info "Criando partição MBR para suporte híbrido..."
+        log_info "Criando partição BIOS GRUB para suporte híbrido..."
         mbr_partition=$(diskpart_create_partition "$device" "primary" "" "1MiB" "2MiB" false)
-        log_verbose "A partição MBR é $mbr_partition"
+        log_verbose "A partição BIOS GRUB é $mbr_partition"
         diskpart_set_flag "$mbr_partition" "bios_grub" on
 
-        start_efi_partition="2MiB"
-        end_efi_partition="201MiB"
+        start_efi_partition=$(uc_add "$start_efi_partition" "1MiB")
+        end_efi_partition=$(uc_add "$end_efi_partition" "1MiB")
     fi
 
     log_info "Criando partição EFI..."
@@ -460,16 +857,92 @@ diskpart_create_image_gpt_layout() {
     log_info "Layout GPT criado com sucesso na imagem de disco."
 }
 
-# diskpart_img_to_vmdk <input_img> <output_vmdk>
-# Converte uma imagem RAW para o formato VMDK
+# diskpart_disk_convert <disk_image> <output_format>
+# Converte uma imagem de disco para um formato diferente usando qemu-img
 # Argumentos:
-#   input_img   - Caminho para a imagem RAW de entrada
-#   output_vmdk - Caminho para a imagem VMDK de saída
-diskpart_img_to_vmdk() {
-    local input_img="$1"
-    local output_vmdk="$2"
+#   disk_image    - Um DiskImage para ser convertido
+#   output_format - O formato de saída desejado suportado pelo qemu-img e diskpart.
+diskpart_disk_convert() {
+    local disk_image="$1"
+    local output_format="$2"
 
-    log_info "Convertendo imagem RAW '$input_img' para VMDK em '$output_vmdk'..."
-    exec_logged "DISKPART" qemu-img convert -f raw -O vmdk -o subformat=streamOptimized "$input_img" "$output_vmdk"
-    log_info "Conversão para VMDK concluída com sucesso."
+    log_info "Convertendo imagem '$disk_image' para '$output_format'..."
+
+    local parsed image_path backend
+    parsed=$(_diskpart_parse_disk_image "$disk_image")
+    IFS=':' read -r image_path backend <<< "$parsed"
+
+    local dest_image_path
+    local extra_args=""
+    local output_qemu_format
+    case "$output_format" in
+        qcow2)
+            log_verbose "Formato de saída é QCOW2."
+            dest_image_path="${image_path%.*}.qcow2"
+            output_qemu_format="qcow2"
+            ;;
+        img)
+            log_verbose "Formato de saída é RAW."
+            dest_image_path="${image_path%.*}.img"
+            output_qemu_format="raw"
+            ;;
+        vmdk)
+            log_verbose "Formato de saída é VMDK."
+            dest_image_path="${image_path%.*}.vmdk"
+            extra_args="-o subformat=streamOptimized"
+            output_qemu_format="vmdk"
+            ;;
+        *)
+            log_error "Formato de saída desconhecido: $output_format"
+            exit 1
+            ;;
+    esac
+
+    local source_format
+    source_format=$(_diskpart_guess_format_from_path "$image_path")
+    if [[ -z "$source_format" && -n "$backend" ]]; then
+        if [[ "$backend" == "qcow" ]]; then
+            source_format="qcow2"
+        elif [[ "$backend" == "raw" ]]; then
+            source_format="raw"
+        fi
+    fi
+
+    if [[ -n "$source_format" ]]; then
+        exec_logged "DISKPART" qemu-img convert -f "$source_format" -O "$output_qemu_format" $extra_args "$image_path" "$dest_image_path"
+    else
+        exec_logged "DISKPART" qemu-img convert -O "$output_qemu_format" $extra_args "$image_path" "$dest_image_path"
+    fi
+    log_info "Conversão para $output_format concluída com sucesso."
+    echo "$dest_image_path"
+}
+
+# diskpart_cleanup
+# Libera todos os dispositivos do diskpart rastreados e, se o backend for qcow, 
+# tenta descarregar o módulo nbd se não estiver mais em uso.
+diskpart_cleanup() {
+    log_verbose "Executando limpeza do diskpart..."
+    diskpart_free_all_devices
+
+    if [[ "$(backend)" == "qcow" ]]; then
+        log_verbose "Verificando se há dispositivos nbd ainda em uso após a limpeza..."
+
+        local nbd_refcnt
+        nbd_refcnt=$(cat /sys/module/nbd/refcnt)
+
+        if [[ "$nbd_refcnt" -ne 0 ]]; then
+            log_warning "O módulo nbd está sendo usado, não será descarregado. Refcnt atual: $nbd_refcnt"
+            log_warning "Note que um bug pode existir e impedir do disco resultante ser liberado."
+            log_warning "Portanto, verifique e desconecte manualmente quaisquer dispositivos nbd restantes se necessário."
+        else
+            log_verbose "Nenhum dispositivo nbd em uso, descarregando módulo nbd..."
+            if ! modprobe -r nbd; then
+                log_warning "Falha ao descarregar o módulo nbd. Verifique se há processos usando nbd ou se o módulo está travado."
+                log_warning "Refcnt atual: $(cat /sys/module/nbd/refcnt)"
+            else
+                log_verbose "Módulo nbd descarregado com sucesso."
+            fi
+        fi
+    fi
+    log_verbose "Limpeza do diskpart concluída."
 }

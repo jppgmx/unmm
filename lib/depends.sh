@@ -7,6 +7,11 @@
 # Sob licença MIT
 #
 
+if [[ -n "${UNMM_LIB_DEPENDS_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_DEPENDS_LOADED=true
+
 _REQUIRED_DEPENDENCIES=(
     # --- Manipulação de Disco e Imagem ---
     "wipefs:util-linux"
@@ -20,7 +25,7 @@ _REQUIRED_DEPENDENCIES=(
     "debootstrap:debootstrap"
     "chroot:coreutils"       # Opcional, mas aceitável manter
 
-    # --- Utilitários de Download e Empacotamento ---
+    # --- Utilitários e Empacotamento ---
     "wget:wget"
     "tar:tar"
     "awk:gawk"               # Vital para scripts de manipulação de texto
@@ -37,6 +42,7 @@ _DEBIAN_SPECIFIC_DEPENDENCIES=(
 
 _ARCH_SPECIFIC_DEPENDENCIES=(
     "qemu-img:qemu-img"
+    "python3:python"
 )
 
 _PYTHON_VERSION_REQUIRED="3.11"
@@ -73,6 +79,22 @@ function check_os() {
 function check_if_supports_debootstrap() {
     local os_type
     os_type=$(check_os) || return 1
+    return 0
+}
+
+check_python_version() {
+    if ! command -v python3 &> /dev/null; then
+        log_error "Python 3 não encontrado. Por favor, instale Python 3.11 ou superior."
+        return 1
+    fi
+
+    local version
+    version=$(python3 --version 2>&1 | awk '{print $2}')
+    if [[ "$(printf '%s\n' "$_PYTHON_VERSION_REQUIRED" "$version" | sort -V | head -n1)" != "$_PYTHON_VERSION_REQUIRED" ]]; then
+        log_error "Versão do Python é $version. Por favor, instale Python 3.11 ou superior."
+        return 1
+    fi
+
     return 0
 }
 

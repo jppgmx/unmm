@@ -7,6 +7,11 @@
 #   Sob licença MIT
 #
 
+if [[ -n "${UNMM_LIB_CHROOT_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_CHROOT_LOADED=true
+
 declare -ag SYSTEM_MOUNTPOINTS
 if [[ -z "${SYSTEM_MOUNTPOINTS+x}" ]]; then
     SYSTEM_MOUNTPOINTS=()

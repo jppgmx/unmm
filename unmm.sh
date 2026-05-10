@@ -8,6 +8,11 @@
 #   Sob licença MIT
 #
 
+if [ -z "$BASH_VERSION" ]; then
+    echo "** Este script deve ser executado com bash."
+    exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -25,27 +30,31 @@ Script especializado na criação de imagens do Ubuntu Noble de forma mínima ba
 
 Uso: unmm.sh [options] [<catalog> [addon1 addon2 ...]]
 Opções:
-  -h, --help                   Mostra esta mensagem de ajuda e sai
-  --list                       Lista todos os catálogos e add-ons disponíveis
-  --create-ova                 Cria um arquivo OVA e mantém a imagem RAW
-  --mountpoint=MOUNTPOINT      Especifica o ponto de montagem para a criação da imagem
-  --maximum-size=SIZE          Especifica o tamanho máximo da imagem (ex: 10G, 500M)
-  -o, --output=OUTPUT_PATH     Especifica o caminho do novo arquivo de imagem
-  -b, --boot-mode=MODE         Especifica o modo de boot para a imagem (ex: bios, uefi, hybrid)
-  -n, --hostname=HOSTNAME      Define o hostname do sistema instalado (padrão: unmm-system)
-  -u, --username=USERNAME      Define o nome do usuário padrão (padrão: user)
-  -p, --password=PASSWORD      Define a senha do usuário padrão (padrão: password)
-  -l, --license=LICENSE        Especifica o caminho para o arquivo de licença a ser incluído
-  -k, --keep                   Mantém os arquivos usados em caso de falha na criação da imagem
-  -v, --verbose                Habilita logging verboso
-  <catalog>                    Nome do catálogo a ser usado (padrão: base)
-  [addon1 addon2 ...]          Lista de add-ons a serem aplicados após o catálogo
+    -h, --help                   Mostra esta mensagem de ajuda e sai
+    --list                       Lista todos os catálogos e add-ons disponíveis
+    --nologo                     Alias para a opção General.NoLogo
+    --mountpoint=MOUNTPOINT      Alias para a opção General.MountPoint
+    -o, --output=OUTPUT_PATH     Alias para a opção General.OutputDir
+    -l, --license=LICENSE        Alias para a opção General.License
+    -k, --keep                   Alias para a opção General.KeepOnErrors=true
+    --maximum-size=SIZE          Alias para a opção Image.MaximumSize (ex: 10G, 500M)
+    -f, --format=FORMAT          Alias para as opções Export.Type e Export.Subtype
+    -b, --boot-mode=MODE         Alias para a opção System.BootMode (bios, uefi, hybrid)
+    -n, --hostname=HOSTNAME      Alias para a opção System.Hostname
+    -u, --username=USERNAME      Alias para a opção System.User
+    -p, --password=PASSWORD      Alias para a opção System.Password
+    -opt, --option KEY=VALUE     Alias para a opção um override direto (formato: Secao.Subsecao.Chave=Valor)
+    -v, --verbose                Alias para a opção Lib.Logging.Verbose=true
+    --display-vars               Mostra as variáveis da configuração processadas, ativa modo verboso e sai
+    <catalog>                    Nome do catálogo a ser usado (padrão: base)
+    [addon1 addon2 ...]          Lista de add-ons a serem aplicados após o catálogo
 
 Notas:
   - O script deve ser executado com privilégios de superusuário (root).
   - Certifique-se de ter espaço suficiente em disco para a criação da imagem.
   - Os catálogos e add-ons disponíveis podem ser listados usando a opção --list.
-  - O disco gerado será salvo como caminho/para/output/HOSTNAME.img
+  - As opções de CLI sobrescrevem valores do arquivo unmm.conf, 
+    consulte o arquivo de configuração para mais detalhes sobre as opções disponíveis.
   - A ordem dos add-ons importa, pois eles serão aplicados na sequência fornecida.
 
 Exemplo:
@@ -92,20 +101,12 @@ source "$LIB_DIR/common.sh" || (echo "Falha ao tentar source common.sh"; exit 1)
 # shellcheck source=lib/logging.sh
 source "$LIB_DIR/logging.sh" || (echo "Falha ao tentar source logging.sh"; exit 1)
 
-# Valores padrão
-CREATE_OVA=false
-MOUNTPOINT="/mnt/unmm"
-MAXIMUM_SIZE="8G"
-OUTPUT_PATH=$(to_absolute_path "./output")
-BOOT_MODE="bios"
-HOSTNAME="unmm-system"
-USERNAME="user"
-PASSWORD="password"
+# shellcheck source=defaults
+source "$SCRIPT_DIR/defaults" || (echo "Falha ao tentar source defaults"; exit 1)
 CATALOG="base"
-LICENSE_FILE="$ASSETS_DIR/generic_LICENSE"
-ENABLE_VERBOSE=false
-KEEP_ON_FAILURE=false
 ADDONS=()
+DISPLAY_VARS=false
+declare -a SET_LIST=()
 
 # Processamento dos argumentos
 while [[ $# -ne 0 ]]; do
@@ -135,16 +136,12 @@ while [[ $# -ne 0 ]]; do
 
             exit 0
             ;;
-        --create-ova)
-            CREATE_OVA=true
+        --nologo)
+            SET_LIST+=("-s" "General.NoLogo=true")
             shift
             ;;
         --mountpoint=*)
-            MOUNTPOINT="${1#*=}"
-            shift
-            ;;
-        --maximum-size=*)
-            MAXIMUM_SIZE="${1#*=}"
+            SET_LIST+=("-s" "General.MountPoint=${1#*=}")
             shift
             ;;
         -o|--output=*)
@@ -152,83 +149,113 @@ while [[ $# -ne 0 ]]; do
                 shift
                 OUTPUT_PATH="$1"
                 shift
-                continue
             else
                 OUTPUT_PATH="${1#*=}"
                 shift
             fi
 
             OUTPUT_PATH=$(to_absolute_path "$OUTPUT_PATH")
-            if [[ ! -d "$OUTPUT_PATH" ]]; then
-                mkdir -p "$OUTPUT_PATH"
-            fi
-            ;;
-        -b|--boot-mode=*)
-            if [[ "$1" == -b ]]; then
-                shift
-                BOOT_MODE="$1"
-                shift
-                continue
-            else
-                BOOT_MODE="${1#*=}"
-                shift
-            fi
-            ;;
-        -n|--hostname=*)
-            if [[ "$1" == -n ]]; then
-                shift
-                HOSTNAME="$1"
-                shift
-                continue
-            else
-                HOSTNAME="${1#*=}"
-                shift
-            fi
-            ;;
-        -u|--username=*)
-            if [[ "$1" == -u ]]; then
-                shift
-                USERNAME="$1"
-                shift
-                continue
-            else
-                USERNAME="${1#*=}"
-                shift
-            fi
-            ;;
-        -p|--password=*)
-            if [[ "$1" == -p ]]; then
-                shift
-                PASSWORD="$1"
-                shift
-                continue
-            else
-                PASSWORD="${1#*=}"
-                shift
-            fi
+            SET_LIST+=("-s" "General.OutputDir=$OUTPUT_PATH")
             ;;
         -l|--license=*)
             if [[ "$1" == -l ]]; then
                 shift
                 LICENSE_FILE="$1"
                 shift
-                continue
             else
                 LICENSE_FILE="${1#*=}"
                 shift
             fi
-
-            if [[ ! -f "$LICENSE_FILE" ]]; then
-                log_error "O arquivo de licença especificado '$LICENSE_FILE' não existe."
-                exit 1
-            fi
+            SET_LIST+=("-s" "General.License=$LICENSE_FILE")
             ;;
         -k|--keep)
-            KEEP_ON_FAILURE=true
+            SET_LIST+=("-s" "General.KeepOnErrors=true")
             shift
             ;;
+        --maximum-size=*)
+            SET_LIST+=("-s" "Image.MaximumSize=${1#*=}")
+            shift
+            ;;
+        -f|--format=*)
+            if [[ "$1" == -f ]]; then
+                shift
+                FORMAT_RAW="$1"
+            else
+                FORMAT_RAW="${1#*=}"
+            fi
+
+            IFS=',' read -r -a format_parts <<< "$FORMAT_RAW"
+            if [[ ${#format_parts[@]} -eq 0 ]]; then
+                log_error "Formato inválido para a opção -f|--format. \
+                           Espera-se algo como tipo,subtipo. Consulte unmm.conf para mais informações."
+                exit 1
+            fi
+            
+            FORMAT_TYPE="${format_parts[0]}"
+            FORMAT_SUBTYPE="${format_parts[1]:-}"
+
+            SET_LIST+=("-s" "Export.Type=$FORMAT_TYPE")
+            if [[ -n "$FORMAT_SUBTYPE" ]]; then
+                SET_LIST+=("-s" "Export.Subtype=$FORMAT_SUBTYPE")
+            fi
+
+            shift
+            ;;
+        -b|--boot-mode=*)
+            if [[ "$1" == -b ]]; then
+                shift
+                BOOT_MODE="$1"
+                shift
+            else
+                BOOT_MODE="${1#*=}"
+                shift
+            fi
+            SET_LIST+=("-s" "System.BootMode=$BOOT_MODE")
+            ;;
+        -n|--hostname=*)
+            if [[ "$1" == -n ]]; then
+                shift
+                HOSTNAME="$1"
+                shift
+            else
+                HOSTNAME="${1#*=}"
+                shift
+            fi
+            SET_LIST+=("-s" "System.Hostname=$HOSTNAME")
+            ;;
+        -u|--username=*)
+            if [[ "$1" == -u ]]; then
+                shift
+                USERNAME="$1"
+                shift
+            else
+                USERNAME="${1#*=}"
+                shift
+            fi
+            SET_LIST+=("-s" "System.User=$USERNAME")
+            ;;
+        -p|--password=*)
+            if [[ "$1" == -p ]]; then
+                shift
+                PASSWORD="$1"
+                shift
+            else
+                PASSWORD="${1#*=}"
+                shift
+            fi
+            SET_LIST+=("-s" "System.Password=$PASSWORD")
+            ;;
         -v|--verbose)
-            ENABLE_VERBOSE=true
+            SET_LIST+=("-s" "Lib.Logging.Verbose=true")
+            shift
+            ;;
+        -opt|--option)
+            SET_LIST+=("-s" "$2")
+            shift 2
+            ;;
+        --display-vars)
+            DISPLAY_VARS=true
+            SET_LIST+=("-s" "Lib.Logging.Verbose=true")
             shift
             ;;
         -*)
@@ -245,13 +272,64 @@ while [[ $# -ne 0 ]]; do
     esac
 done
 
+# shellcheck disable=SC1090
+source <(python3 "$ASSETS_DIR/confldr.py" "$SCRIPT_DIR/unmm.conf" "${SET_LIST[@]}") \
+|| (echo "Falha ao tentar source configuração processada"; exit 1)
+
 if [[ "$EUID" -ne 0 ]]; then
     echo "** Script deve ser executado como superusuário."
     exit 1
 fi
 
+if [[ "$UNMM_GENERAL_NO_LOGO" != true ]]; then
+    logo
+fi
+
+MOUNTPOINT="$UNMM_GENERAL_MOUNT_POINT"
+MAXIMUM_SIZE="$UNMM_LIB_DISKPART_MAXIMUM_SIZE"
+OUTPUT_PATH="$UNMM_GENERAL_OUTPUT_DIR"
+BOOT_MODE="$UNMM_SYSTEM_BOOT_MODE"
+HOSTNAME="$UNMM_SYSTEM_HOSTNAME"
+USERNAME="$UNMM_SYSTEM_USER"
+PASSWORD="$UNMM_SYSTEM_PASSWORD"
+LICENSE_FILE="$UNMM_GENERAL_LICENSE"
+ENABLE_VERBOSE="${UNMM_LIB_LOGGING_VERBOSE:-false}"
+KEEP_ON_FAILURE="$UNMM_GENERAL_KEEP_ON_ERRORS"
+
+if [[ "$DISPLAY_VARS" == true ]]; then
+    log_info "Exibindo valores atuais das variáveis de configuração processadas:"
+fi
+log_verbose "Parâmetros de configuração:"
+if [[ "$DISPLAY_VARS" == true || "$ENABLE_VERBOSE" == true ]]; then
+    
+    declare | grep -E "^UNMM_.*=" | while read -r line; do
+        var_name=$(echo "$line" | cut -d= -f1)
+        var_value=$(echo "$line" | cut -d= -f2-)
+        if [[ "$var_name" == *PASSWORD* ]]; then
+            var_value="[HIDDEN]"
+        fi
+        log_verbose "  $var_name: $var_value"
+    done
+
+    if [[ "$DISPLAY_VARS" == true ]]; then
+        exit 0
+    fi
+fi
+
+OUTPUT_PATH=$(to_absolute_path "$OUTPUT_PATH")
+if [[ ! -d "$OUTPUT_PATH" ]]; then
+    mkdir -p "$OUTPUT_PATH"
+fi
+
+if [[ ! -f "$LICENSE_FILE" ]]; then
+    log_error "O arquivo de licença especificado '$LICENSE_FILE' não existe."
+    exit 1
+fi
+
 # shellcheck source=lib/depends.sh
 source "$LIB_DIR/depends.sh" || (echo "Falha ao tentar source depends.sh"; exit 1)
+# shellcheck source=lib/uc.sh
+source "$LIB_DIR/uc.sh" || (echo "Falha ao tentar source uc.sh"; exit 1)
 # shellcheck source=lib/diskpart.sh
 source "$LIB_DIR/diskpart.sh" || (echo "Falha ao tentar source diskpart.sh"; exit 1)
 # shellcheck source=lib/chroot.sh
@@ -261,13 +339,14 @@ source "$LIB_DIR/ova.sh" || (echo "Falha ao tentar source ova.sh"; exit 1)
 
 check_if_supports_debootstrap || exit 1
 check_dependencies || exit 1
+check_python_version || exit 1
 
 # shellcheck disable=SC2120
 cleanup() {
     trap - EXIT INT TERM ERR
 
     chroot_cleanup
-    diskpart_free_all_loop_devices
+    diskpart_cleanup
     if [[ $# == 0 && "$KEEP_ON_FAILURE" == false ]]; then
         log_info "Deletando imagem incompleta..."
         rm -f "$disk_image_path"
@@ -278,22 +357,8 @@ cleanup() {
     fi
 }
 
-
+log_verbose "Registrando trap para limpeza em EXIT, INT, TERM e ERR..."
 trap cleanup EXIT INT TERM ERR
-
-log_verbose "Parâmetros de configuração:"
-log_verbose "  CREATE_OVA: $CREATE_OVA"
-log_verbose "  MOUNTPOINT: $MOUNTPOINT"
-log_verbose "  MAXIMUM_SIZE: $MAXIMUM_SIZE"
-log_verbose "  OUTPUT_PATH: $OUTPUT_PATH"
-log_verbose "  BOOT_MODE: $BOOT_MODE"
-log_verbose "  HOSTNAME: $HOSTNAME"
-log_verbose "  USERNAME: $USERNAME"
-log_verbose "  PASSWORD: [HIDDEN]"
-log_verbose "  LICENSE_FILE: $LICENSE_FILE"
-log_verbose "  KEEP_ON_FAILURE: $KEEP_ON_FAILURE"
-log_verbose "  CATALOG: $CATALOG"
-log_verbose "  ADDONS: ${ADDONS[*]}"
 
 log_info "Iniciando criação da imagem com o catálogo '$CATALOG' e add-ons: ${ADDONS[*]}"
 log_verbose "Sourcing catálogo..."
@@ -305,7 +370,7 @@ source "$CATALOG_DIR/$CATALOG" || {
 }
 
 log_verbose "Determinando o disco a ser criado..."
-disk_image_path="$OUTPUT_PATH/$HOSTNAME.img"
+disk_image_path="$OUTPUT_PATH/$(diskpart_filename "$HOSTNAME")"
 mkdir -p "$(dirname "$disk_image_path")"
 
 log_info "Um novo disco será criado em $disk_image_path"
@@ -317,12 +382,15 @@ if size_less_than "$MAXIMUM_SIZE" "$CATALOG_PREFFERED_SIZE"; then
 fi
 
 log_info "Preparando imagem de disco..."
-diskpart_create_raw_disk "$disk_image_path" "$MAXIMUM_SIZE"
+disk_image=$(diskpart_create_disk "$disk_image_path" "$MAXIMUM_SIZE")
 log_info "Imagem de disco criada em '$disk_image_path'."
 
-device=$(diskpart_setup_loop_device "$disk_image_path")
-log_verbose "Dispositivo loop é: $device"
-diskpart_track_loop_device "$device"
+log_info "Criando dispositivo de blocos para a imagem de disco..."
+disk_device=$(diskpart_create_device "$disk_image")
+diskpart_track_device "$disk_device"
+
+IFS=':' read -r device _disk_image_path _disk_backend <<< "$disk_device"
+log_verbose "Dispositivo do diskpart é: $device"
 
 log_info "Formatação e particionamento do disco..."
 if [[ "$BOOT_MODE" == "uefi" ]]; then
@@ -401,7 +469,7 @@ log_info "Imagem do Ubuntu Noble criada com sucesso em '$disk_image_path'."
 if [[ "$CREATE_OVA" == true ]]; then
     ova_output_path="$OUTPUT_PATH/$HOSTNAME.ova"
     log_info "Criando arquivo OVA em '$ova_output_path'..."
-    diskpart_img_to_vmdk "$disk_image_path" "$OUTPUT_PATH/$HOSTNAME.vmdk"
+    diskpart_disk_convert "$disk_image" vmdk
     ova_generate "$HOSTNAME" "$OUTPUT_PATH" "$BOOT_MODE" "$LICENSE_FILE"
 
     log_info "Arquivo OVA criado com sucesso em '$ova_output_path'."

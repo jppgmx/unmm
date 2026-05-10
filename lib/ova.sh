@@ -7,6 +7,11 @@
 #   Sob licença MIT
 #
 
+if [[ -n "${UNMM_LIB_OVA_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_OVA_LOADED=true
+
 # Caminho para o script Python ovftool.py
 OVFTOOL_SCRIPT="${SCRIPT_DIR:-$(dirname "${BASH_SOURCE[0]}")/..}/assets/ovftool.py"
 
