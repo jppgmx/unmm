@@ -3,7 +3,9 @@
 O projeto costuma adotar uma forma de documentar funções das bibliotecas (libs), definindo antes da função a seguinte estrutura base:
 ```sh
 # funcao (stdin) <parametro_obrigatorio> [parametro_opcional][parametro_variavel...]
-# Uma descrição da função...
+#  Uma descrição da função...
+#  Parágrafos tem um espaço a mais na primeira linha, não recomendado criar uma linha grande, posso quebrar aqui
+# e perceba que o espaço é normal aqui.
 #
 # Argumentos:
 #   param1 - Parâmetro 1
