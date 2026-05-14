@@ -16,12 +16,27 @@ _diskpart_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_diskpart_lib_dir}/logging.sh"
 # shellcheck source=uc.sh
 source "${_diskpart_lib_dir}/uc.sh"
+# shellcheck source=lib/config/lib.diskpart
+with_config lib.diskpart
 unset _diskpart_lib_dir
 
+# Servirá para listar os dispositivos criados e rastreados para liberação posterior, evitando vazamentos de recursos.
 declare -ga TRACKED_DISKPART_DEVICES
 if [[ -z "${TRACKED_DISKPART_DEVICES+x}" ]]; then
     TRACKED_DISKPART_DEVICES=()
 fi
+
+# Não há definição de typedefs em Shell Script, mas considere os seguintes termos:
+#   - DiskImage: Refere-se a uma string no formato "ARQUIVO:BACKEND", onde:
+#       - ARQUIVO é o caminho para a imagem de disco (ex: /path/to/disk.qcow2)
+#       - BACKEND é o tipo de backend usado para criar a imagem (ex: qcow ou raw).
+#   - DiskDevice: Refere-se a uma string no formato "DISPOSITIVO:ARQUIVO:BACKEND", onde:
+#       - DISPOSITIVO é o caminho para o dispositivo de disco (ex: /dev/nbd0)
+#       - ARQUIVO é o caminho para a imagem de disco (ex: /path/to/disk.qcow2)
+#       - BACKEND é o tipo de backend usado para criar a imagem (ex: qcow ou raw).
+#
+# Para os próximos comentários dessa lib, usaremos esses termos.
+#
 
 _diskpart_is_tracked_device() {
     local device="$1"
@@ -117,83 +132,6 @@ _diskpart_run_partprobe() {
     fi
 }
 
-# Não há definição de typedefs em Shell Script, mas considere os seguintes termos:
-#   - DiskImage: Refere-se a uma string no formato "ARQUIVO:BACKEND", onde:
-#       - ARQUIVO é o caminho para a imagem de disco (ex: /path/to/disk.qcow2)
-#       - BACKEND é o tipo de backend usado para criar a imagem (ex: qcow ou raw).
-#   - DiskDevice: Refere-se a uma string no formato "DISPOSITIVO:ARQUIVO:BACKEND", onde:
-#       - DISPOSITIVO é o caminho para o dispositivo de disco (ex: /dev/nbd0)
-#       - ARQUIVO é o caminho para a imagem de disco (ex: /path/to/disk.qcow2)
-#       - BACKEND é o tipo de backend usado para criar a imagem (ex: qcow ou raw).
-#
-# Para os próximos comentários dessa lib, usaremos esses termos.
-#
-
-# backend
-# Obtém o backend de manipulação de disco configurado (qcow ou raw).
-# Retorna:
-#   O backend configurado ou sai com erro se o valor for inválido.
-backend() {
-    local backend="${UNMM_LIB_DISKPART_BACKEND:-qcow}"
-    if [[ ! "$backend" =~ ^(qcow|raw)$ ]]; then
-        log_error "Backend inválido: $backend. Use 'qcow' ou 'raw'."
-        log_error "Consulte unmm.conf para configurar."
-        exit 1
-    fi
-
-    echo "$backend"
-}
-
-# backend_extension
-# Retorna a extensão de arquivo apropriada para o backend de manipulação de disco configurado
-# 
-# Retorna: 
-#   - "qcow2" para o backend qcow;
-#   - "img" para o backend raw. 
-# Sai com erro se o backend for desconhecido.
-backend_extension() {
-    case "$(backend)" in
-        qcow)
-            echo "qcow2"
-            ;;
-        raw)
-            echo "img"
-            ;;
-        *)
-            log_error "Backend desconhecido: $(backend)"
-            exit 1
-            ;;
-    esac
-}
-
-# use_partprobe
-# Checa se o uso do partprobe após a criação de partições está habilitado.
-#
-# Retorna:
-#   0 (sucesso) se partprobe deve ser usado, ou 1 se não.
-use_partprobe() {
-    local use_probe="${UNMM_LIB_DISKPART_PARTPROBE_AFTER_PARTITION:-true}"
-    if [[ "$use_probe" == true ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# use_udev_settle
-# Checa se o uso do udev settle após a criação de partições está habilitado.
-#
-# Retorna:
-#   0 (sucesso) se udevadm settle deve ser usado, ou 1 se não.
-use_udev_settle() {
-    local use_udev="${UNMM_LIB_DISKPART_UDEV_SETTLE:-true}"
-    if [[ "$use_udev" == true ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 # _validate_size <size>
 # Valida um tamanho usando unicalc, aceitando unidades SI/IEC e bits/bytes.
 #
@@ -208,6 +146,21 @@ _validate_size() {
         log_error "Tamanho inválido: $size. Use uma unidade válida (ex: 500M, 10G, 1GiB)."
         exit 1
     fi
+}
+
+backend_extension() {
+    case "$(backend)" in
+        qcow)
+            echo "qcow2"
+            ;;
+        raw)
+            echo "img"
+            ;;
+        *)
+            log_error "Backend desconhecido: $(backend)"
+            exit 1
+            ;;
+    esac
 }
 
 # diskpart_filename <name>
@@ -257,7 +210,7 @@ diskpart_create_disk() {
 }
 
 # _diskpart_create_qcow_disk <output_path> <size>
-# Cria uma imagem de disco QCOW2 pré-alocada
+# Cria uma imagem de disco QCOW2
 #
 # Argumentos:
 #   output_path - Caminho onde a imagem de disco será criada
@@ -273,7 +226,7 @@ _diskpart_create_qcow_disk() {
 
     log_info "Criando disco QCOW2 em '$output_path' com tamanho '$size'..."
     mkdir -p "$(dirname "$output_path")"
-    exec_logged "QEMU_IMAGE" qemu-img create -f qcow2 "$output_path" "$size"
+    exec_logged "DiskPart-qcow" qemu-img create -f qcow2 "$output_path" "$size"
     log_info "Disco criado com sucesso."
 }
 
@@ -294,7 +247,7 @@ _diskpart_create_raw_disk() {
 
     log_info "Criando disco pré-alocado em '$output_path' com tamanho '$size'..."
     mkdir -p "$(dirname "$output_path")"
-    exec_logged "QEMU_IMAGE" qemu-img create -f raw "$output_path" "$size"
+    exec_logged "DiskPart-raw" qemu-img create -f raw "$output_path" "$size"
     log_info "Disco criado com sucesso."
 }
 
@@ -407,7 +360,7 @@ _diskpart_create_device_qcow() {
         fi
 
         log_verbose "Tentando conectar '$image_path' ao dispositivo nbd '$nbd_device'..."
-        if exec_logged2 "qemu_nbd" qemu-nbd --connect="$nbd_device" --fork "$image_path"; then
+        if exec_logged2 "DiskPart-qcow" qemu-nbd --connect="$nbd_device" --fork "$image_path"; then
             log_info "Imagem de disco '$image_path' conectada com sucesso ao dispositivo nbd '$nbd_device'."
             result="$nbd_device:$image_path:qcow"
             break
@@ -517,7 +470,7 @@ diskpart_free_device() {
     case "$backend" in
         qcow)
             log_verbose "Usando backend QCOW para liberar dispositivo."
-            exec_logged "DISKPART" qemu-nbd --disconnect "$device"
+            exec_logged "DiskPart-qcow" qemu-nbd --disconnect "$device"
 
             local device_name
             device_name=$(basename "$device")
@@ -529,7 +482,7 @@ diskpart_free_device() {
             ;;
         raw)
             log_verbose "Usando backend RAW para liberar dispositivo."
-            exec_logged "DISKPART" losetup -d "$device"
+            exec_logged "DiskPart-raw" losetup -d "$device"
             ;;
         *)
             log_error "Backend desconhecido: $backend"
@@ -578,7 +531,7 @@ diskpart_create_partition_table() {
     sync
 
     log_info "Deletando tudo em '$device' antes de criar a tabela de partições..."
-    if ! exec_logged "DISKPART" wipefs -fa "$device"; then
+    if ! exec_logged "DiskPart" wipefs -fa "$device"; then
         log_error "Falha ao limpar assinaturas de sistema de arquivos em '$device'."
         exit 1
     fi
@@ -589,14 +542,14 @@ diskpart_create_partition_table() {
             log_verbose "Usando comando parted para criar tabela de partições GPT."
             ;;
         msdos)
-            log_verbose "Usando comando parted para criar tabela de partições MSDOS."
+            log_verbose "Usando comando parted para criar tabela de partições MSDOS (MBR)."
             ;;
         *)
             log_error "Esquema de partição desconhecido: $part_schema"
             exit 1
             ;;
     esac
-    if ! exec_logged "DISKPART" parted -s "$device" mklabel "$part_schema"; then
+    if ! exec_logged "DiskPart" parted -s "$device" mklabel "$part_schema"; then
         log_error "Falha ao criar tabela de partições '$part_schema' em '$device'."
         exit 1
     fi
@@ -715,10 +668,10 @@ diskpart_format_partition() {
 
     case "$filesystem_type" in
         ext4)
-            exec_logged "DISKPART" mkfs.ext4 -F "$partition_device"
+            exec_logged "DiskPart" bash -c "mkfs.ext4 -F \"$partition_device\" 2>&1"
             ;;
         fat32)
-            exec_logged "DISKPART" mkfs.fat -F32 "$partition_device"
+            exec_logged "DiskPart" bash -c "mkfs.fat -F32 \"$partition_device\" 2>&1"
             ;;
         *)
             log_error "Tipo de sistema de arquivos desconhecido: $filesystem_type"
@@ -763,7 +716,7 @@ diskpart_create_partition() {
     fi
 
     #shellcheck disable=SC2086
-    exec_logged "DISKPART" parted -s "$device" $parted_command
+    exec_logged "DiskPart" parted -s "$device" $parted_command
 
     _diskpart_run_partprobe "$device"
     _diskpart_run_udev_settle
@@ -799,7 +752,7 @@ diskpart_set_flag() {
     device="${part_device%"p$partition_number"}"
 
     log_verbose "Definindo flag '$flag_name' como '$flag_value' na partição '$part_device' (disco '$device', partição '$partition_number')..."
-    exec_logged "DISKPART" parted -s "$device" set "$partition_number" "$flag_name" "$flag_value"
+    exec_logged "DiskPart" parted -s "$device" set "$partition_number" "$flag_name" "$flag_value"
     log_verbose "Flag '$flag_name' definida como '$flag_value' na partição '$part_device'."
 }
 
@@ -807,12 +760,19 @@ diskpart_set_flag() {
 # Atalho para criar layout MBR completo em uma imagem de disco
 # Argumentos:
 #   device - Dispositivo onde o layout será criado
+#
+# Notas:
+#   O layout MBR é o mais simples, com uma única partição que é a do sistema.
 diskpart_create_image_mbr_layout() {
     local device="$1"
     log_info "Criando layout MBR na imagem de disco '$device'..."
 
     diskpart_create_partition_table "$device" "msdos"
-    diskpart_create_partition "$device" "primary" "ext4" "1MiB" "100%" true
+
+    local system_partition
+    log_info "Criando partição do sistema..."
+    system_partition=$(diskpart_create_partition "$device" "primary" "ext4" "1MiB" "100%" true)
+    log_verbose "A partição do sistema é $system_partition"
 
     log_info "Layout MBR criado com sucesso na imagem de disco."
 }
@@ -822,6 +782,11 @@ diskpart_create_image_mbr_layout() {
 # Argumentos:
 #   device   - Dispositivo onde o layout será criado
 #   ishybrid - Se true, cria uma partição BIOS GRUB adicional para suporte híbrido
+#
+# Notas:
+#  O layout GPT é para os dispositivos mais modernos que usam UEFI e inclui a partição EFI + Sistema.
+#  Esse layout também pode ser usado para suporte híbrido, onde uma partição BIOS GRUB é criada para 
+# permitir boot em sistemas UEFI e BIOS.
 diskpart_create_image_gpt_layout() {
     local device="$1"
     local ishybrid="$2"
@@ -837,18 +802,20 @@ diskpart_create_image_gpt_layout() {
     if [[ "$ishybrid" == true ]]; then
         log_info "Criando partição BIOS GRUB para suporte híbrido..."
         mbr_partition=$(diskpart_create_partition "$device" "primary" "" "1MiB" "2MiB" false)
-        log_verbose "A partição BIOS GRUB é $mbr_partition"
         diskpart_set_flag "$mbr_partition" "bios_grub" on
+        log_verbose "A partição BIOS GRUB é $mbr_partition"
 
+        log_verbose "Ajustando início e fim da partição EFI..."
         start_efi_partition=$(uc_add "$start_efi_partition" "1MiB")
         end_efi_partition=$(uc_add "$end_efi_partition" "1MiB")
     fi
 
     log_info "Criando partição EFI..."
+    log_verbose "início: $start_efi_partition, fim: $end_efi_partition"
     efi_partition=$(diskpart_create_partition "$device" "primary" "fat32" "$start_efi_partition" "$end_efi_partition" true)
-    log_verbose "A partição EFI é $efi_partition"
     diskpart_set_flag "$efi_partition" "boot" on
     diskpart_set_flag "$efi_partition" "esp" on
+    log_verbose "A partição EFI é $efi_partition"
 
     log_info "Criando partição do sistema..."
     system_partition=$(diskpart_create_partition "$device" "primary" "ext4" "$end_efi_partition" "100%" true)
@@ -909,9 +876,9 @@ diskpart_disk_convert() {
     fi
 
     if [[ -n "$source_format" ]]; then
-        exec_logged "DISKPART" qemu-img convert -f "$source_format" -O "$output_qemu_format" $extra_args "$image_path" "$dest_image_path"
+        exec_logged "DiskPart" qemu-img convert -f "$source_format" -O "$output_qemu_format" $extra_args "$image_path" "$dest_image_path"
     else
-        exec_logged "DISKPART" qemu-img convert -O "$output_qemu_format" $extra_args "$image_path" "$dest_image_path"
+        exec_logged "DiskPart" qemu-img convert -O "$output_qemu_format" $extra_args "$image_path" "$dest_image_path"
     fi
     log_info "Conversão para $output_format concluída com sucesso."
     echo "$dest_image_path"
@@ -924,7 +891,7 @@ diskpart_cleanup() {
     log_verbose "Executando limpeza do diskpart..."
     diskpart_free_all_devices
 
-    if [[ "$(backend)" == "qcow" ]]; then
+    if [[ "$(backend)" == "qcow" && -d "/sys/module/nbd" ]]; then
         log_verbose "Verificando se há dispositivos nbd ainda em uso após a limpeza..."
 
         local nbd_refcnt

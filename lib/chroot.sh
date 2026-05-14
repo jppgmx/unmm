@@ -12,6 +12,16 @@ if [[ -n "${UNMM_LIB_CHROOT_LOADED:-}" ]]; then
 fi
 UNMM_LIB_CHROOT_LOADED=true
 
+if ! declare -f with_config >/dev/null 2>&1; then
+    _chroot_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=lib/common.sh
+    source "${_chroot_lib_dir}/common.sh"
+    unset _chroot_lib_dir
+fi
+
+# shellcheck source=lib/config/system
+with_config system
+
 declare -ag SYSTEM_MOUNTPOINTS
 if [[ -z "${SYSTEM_MOUNTPOINTS+x}" ]]; then
     SYSTEM_MOUNTPOINTS=()
@@ -184,12 +194,20 @@ chroot_cleanup() {
     chroot_call_logged "$mountpoint" rm -rf /home/*/.cache/thumbnails || log_warning "Falha ao limpar thumbnails dos usuários."
     chroot_call_logged "$mountpoint" rm -rf /home/*/.cache/mozilla || log_warning "Falha ao limpar cache do Mozilla dos usuários."
 
-    log_verbose "Desligando swap..."
-    chroot_call_logged "$mountpoint" swapoff -a || log_warning "Falha ao desligar swap."
-    log_verbose "Preenchendo swapfile com zeros..."
-    chroot_call_logged "$mountpoint" dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress || log_warning "Falha ao preencher swapfile com zeros."
-    log_verbose "Recriando swapfile..."
-    chroot_call_logged "$mountpoint" mkswap /swapfile || log_warning "Falha ao recriar swapfile."
+    if enable_swap; then
+        if [[ -f "$mountpoint/swapfile" ]]; then
+            log_verbose "Desligando swap..."
+            chroot_call_logged "$mountpoint" swapoff -a || log_warning "Falha ao desligar swap."
+            log_verbose "Preenchendo swapfile com zeros..."
+            chroot_call_logged "$mountpoint" dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress || log_warning "Falha ao preencher swapfile com zeros."
+            log_verbose "Recriando swapfile..."
+            chroot_call_logged "$mountpoint" mkswap /swapfile || log_warning "Falha ao recriar swapfile."
+        else
+            log_verbose "Swap habilitado, mas nenhum swapfile foi encontrado para limpeza."
+        fi
+    else
+        log_verbose "Swap desabilitado pela configuração; pulando limpeza do swapfile."
+    fi
 
     log_info "Desmontando sistema..."
 

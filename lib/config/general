@@ -1,0 +1,38 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_LIB_CONFIG_GENERAL_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_CONFIG_GENERAL_LOADED=true
+
+no_logo() {
+    local enabled="${UNMM_GENERAL_NO_LOGO:-false}"
+    [[ "$enabled" == "true" || "$enabled" == "1" ]]
+}
+
+mountpoint() {
+    local path="${UNMM_GENERAL_MOUNT_POINT:-/mnt/unmm}"
+    echo "$path"
+}
+
+keep_on_errors() {
+    local enabled="${UNMM_GENERAL_KEEP_ON_ERRORS:-false}"
+    [[ "$enabled" == "true" || "$enabled" == "1" ]]
+}
+
+output_dir() {
+    local dir="${UNMM_GENERAL_OUTPUT_DIR:-./output}"
+    echo "$dir"
+}
+
+boot_mode() {
+    local mode="${UNMM_SYSTEM_BOOT_MODE:-bios}"
+
+    if [[ ! "$mode" =~ ^(bios|uefi|hybrid)$ ]]; then
+        log_error "Valor inválido para UNMM_SYSTEM_BOOT_MODE: $mode"
+        log_error "Valores permitidos: bios, uefi, hybrid"
+        exit 1
+    fi
+
+    echo "$mode"
+}

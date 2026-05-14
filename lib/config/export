@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_LIB_CONFIG_EXPORT_LOADED:-}" ]]; then
+	return 0
+fi
+UNMM_LIB_CONFIG_EXPORT_LOADED=true
+
+export_type() {
+	local value="${UNMM_EXPORT_TYPE:-disk}"
+
+	if [[ ! "$value" =~ ^(disk|ova)$ ]]; then
+		log_error "Valor inválido para UNMM_EXPORT_TYPE: $value"
+		log_error "Valores permitidos: disk, ova"
+		exit 1
+	fi
+
+	echo "$value"
+}
+
+export_subtype() {
+	local value="${UNMM_EXPORT_SUBTYPE:-qcow2}"
+	echo "$value"
+}

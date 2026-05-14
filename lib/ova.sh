@@ -12,6 +12,16 @@ if [[ -n "${UNMM_LIB_OVA_LOADED:-}" ]]; then
 fi
 UNMM_LIB_OVA_LOADED=true
 
+if ! declare -f with_config >/dev/null 2>&1; then
+    _ova_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=lib/common.sh
+    source "${_ova_lib_dir}/common.sh"
+    unset _ova_lib_dir
+fi
+
+# shellcheck source=lib/config/export
+with_config export export.ova
+
 # Caminho para o script Python ovftool.py
 OVFTOOL_SCRIPT="${SCRIPT_DIR:-$(dirname "${BASH_SOURCE[0]}")/..}/assets/ovftool.py"
 
@@ -63,11 +73,14 @@ Generated: $(date '+%Y-%m-%d %H:%M:%S')"
     log_verbose "Invocando ovftool.py para gerar manifesto OVF..."
     
     # Construir comando ovftool.py
+    local vm_info
+    vm_info="$(export_ova_info)"
+
     local ovftool_cmd=(
         python3 "$OVFTOOL_SCRIPT"
         --vm-id "$vm_name"
         --vm-name "$vm_name"
-        --vm-info "A virtual machine created by UNMM"
+        --vm-info "$vm_info"
         --vs-type "$vs_type"
         --os-id 94
         --os-description "Ubuntu Linux (64-bit)"
@@ -193,9 +206,9 @@ ova_generate() {
     license_file="$4"
 
     # Parâmetros padrão para a VM
-    local vm_name="$hostname"
-    local cpus="2"
-    local ram_mb="2048"
+    local vm_name="$(export_ova_name)"
+    local cpus="$(export_ova_cpu)"
+    local ram_mb="$(export_ova_memory)"
     local boot_mode="$boot_mode"
     local vmdk_file="$output_path/$hostname.vmdk"
     local license_file="$license_file"

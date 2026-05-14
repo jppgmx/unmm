@@ -23,29 +23,39 @@ export UNMM_VERSION="1.0.0"
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
 _common_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_common_config_lib_dir="${_common_lib_dir}/config"
 # shellcheck source=lib/uc.sh
 source "${_common_lib_dir}/uc.sh"
-unset _common_lib_dir
 
-no_logo() {
-    local enabled="${UNMM_GENERAL_NO_LOGO:-false}"
-    [[ "$enabled" == "true" || "$enabled" == "1" ]]
+with_config() {
+    local config_modules=("$@")
+
+    for config_module in "${config_modules[@]}"; do
+        local config_file
+        if [[ "$config_module" == /* ]]; then
+            # Absolute path
+            config_file="$config_module"
+        elif [[ "$config_module" == ../* ]] || [[ "$config_module" == ./* ]]; then
+            # Relative path: resolve against caller's directory
+            local caller_dir
+            caller_dir="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
+            config_file="$(cd "$caller_dir" && cd "$(dirname "$config_module")" 2>/dev/null && pwd)/$(basename "$config_module")"
+        else
+            # Module in lib/config/
+            config_file="${_common_config_lib_dir}/${config_module}"
+        fi
+
+        if [[ ! -f "$config_file" ]]; then
+            echo "Módulo de configuração não encontrado: $config_module" >&2
+            return 1
+        fi
+
+        # shellcheck source=/dev/null
+        source "$config_file"
+    done
 }
 
-mountpoint() {
-    local path="${UNMM_GENERAL_MOUNT_POINT:-/mnt/unmm}"
-    echo "$path"
-}
-
-keep_on_errors() {
-    local enabled="${UNMM_GENERAL_KEEP_ON_ERRORS:-false}"
-    [[ "$enabled" == "true" || "$enabled" == "1" ]]
-}
-
-output_dir() {
-    local dir="${UNMM_GENERAL_OUTPUT_DIR:-./output}"
-    echo "$dir"
-}
+with_config general
 
 # size_less_than <size1> <size2>
 # Compara dois tamanhos (em MB ou GB) e verifica se o primeiro é menor que o segundo.
@@ -105,14 +115,38 @@ logo() {
     echo
 }
 
-boot_mode() {
-    local mode="${UNMM_SYSTEM_BOOT_MODE:-bios}"
-    
-    if [[ $mode =~ ^(bios|uefi|hybrid)$ ]]; then
-        log_error "Valor inválido para UNMM_SYSTEM_BOOT_MODE: $mode"
-        log_error "Valores permitidos: bios, uefi, hybrid"
+# load_config <config_file...> [setlist]
+# Carrega as configurações a partir de um ou mais arquivos de configuração pelo confldr.py
+# Argumentos:
+#   config_file... - Um ou mais arquivos de configuração a serem processados, separados por dois pontos.
+#   setlist - Lista com Secao.Subsecao.Chave=Valor para sobrepor ou adicionar configurações, separados por espaço.
+load_config() {
+    local config_files="$1"
+    local set_list=("${@:2}")
+
+    local this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local confldr_script
+    confldr_script=$(to_absolute_path "${this_dir}/../assets/confldr.py")
+
+    local confldr_files=()
+    IFS=':' read -ra confldr_files <<< "$config_files"
+
+    local confldr_sets=()
+    for set in "${set_list[@]}"; do
+        confldr_sets+=("-s" "$set")
+    done
+
+    local __confldr_failed=false
+    source <( \
+        python3 "$confldr_script" "${confldr_files[@]}" "${confldr_sets[@]}" \
+            || echo "export __confldr_failed=true" \
+    ) || {
+        echo "**Falha ao tentar source configuração processada" >&2
+        exit 1
+    }
+
+    if [[ "$__confldr_failed" == "true" ]]; then
+        echo "**Falha ao processar configuração com confldr.py" >&2
         exit 1
     fi
-    
-    echo "$mode"
 }

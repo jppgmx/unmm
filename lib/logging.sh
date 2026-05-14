@@ -12,75 +12,12 @@ if [[ -n "${UNMM_LIB_LOGGING_LOADED:-}" ]]; then
 fi
 UNMM_LIB_LOGGING_LOADED=true
 
-# verbose
-# Verifica se o modo verbose está habilitado.
-# Retorna 0 (sucesso) se verbose estiver habilitado, ou 1 (falha) caso contrário.
-#
-# Notas:
-#  O modo verbose é controlado pela variável de ambiente UNMM_LIB_LOGGING_VERBOSE.
-#  Antes do confldr, logging.sh é carregado sem verbose por padrão.
-verbose() {
-    local enabled="${UNMM_LIB_LOGGING_VERBOSE:-false}"
-    if [[ "$enabled" == true ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# can_colorize
-# Verifica se a saída de log pode ser colorizada.
-# Retorna 0 (sucesso) se a colorização for possível, ou 1 (falha) caso contrário.
-#
-# Notas:
-#  A colorização é controlada pela variável de ambiente UNMM_LIB_LOGGING_COLORIZE_MARKERS.
-#  Mesmo habilitada, a colorização só ocorrerá se o stderr for um terminal, o terminal não for "dumb" 
-# e suportar cores (verificado com tput).
-can_colorize() {
-    local enabled="${UNMM_LIB_LOGGING_COLORIZE_MARKERS:-true}"
-    if [[ "$enabled" == true ]]; then
-        # Checar se FD do stderr é um terminal
-        [[ -t 2 ]] || return 1
-        
-        # Checar se o terminal não é "dumb"
-        [[ "$TERM" != "dumb" ]] || return 1
-
-        # Checar com tput se o terminal suporta cores
-        if command -v tput &> /dev/null; then
-            local colors
-            colors=$(tput colors)
-            [[ "$colors" -ge 8 ]] || return 1
-        fi
-
-        return 0
-    else
-        return 1
-    fi
-}
-
-# log_file
-#  Retorna o caminho do arquivo de log configurado, 
-# ou /dev/null se não configurado, para evitar erros de escrita.
-#  Se o diretório do arquivo de log não existir ou não for gravável, 
-# retorna um código de erro.
-#
-log_file() {
-    local log_file="${UNMM_LIB_LOGGING_LOG_FILE:-/dev/null}"
-
-    if [[ "$log_file" != /dev/null ]]; then
-        # Verificar se o diretório do arquivo de log existe e é gravável
-        local log_dir
-        log_dir=$(dirname "$log_file")
-        if [[ ! -d "$log_dir" ]]; then
-            return 1
-        fi
-        if [[ ! -w "$log_dir" ]]; then
-            return 2
-        fi
-    fi
-
-    echo "$log_file"
-}
+_logging_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${_logging_lib_dir}/common.sh"
+# shellcheck source=lib/config/lib.logging
+with_config lib.logging
+unset _logging_lib_dir
 
 # _colorize_marker (stdin)
 # Coloriza a saída de log com base no marcador de nível detectado.

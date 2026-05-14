@@ -1,0 +1,58 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_LIB_CONFIG_LOGGING_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_CONFIG_LOGGING_LOADED=true
+
+# verbose
+# Verifica se o modo verbose está habilitado.
+# Retorna 0 (sucesso) se verbose estiver habilitado, ou 1 (falha) caso contrário.
+verbose() {
+    local enabled="${UNMM_LIB_LOGGING_VERBOSE:-false}"
+    if [[ "$enabled" == true ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# can_colorize
+# Verifica se a saída de log pode ser colorizada.
+# Retorna 0 (sucesso) se a colorização for possível, ou 1 (falha) caso contrário.
+can_colorize() {
+    local enabled="${UNMM_LIB_LOGGING_COLORIZE_MARKERS:-true}"
+    if [[ "$enabled" == true ]]; then
+        [[ -t 2 ]] || return 1
+        [[ "$TERM" != "dumb" ]] || return 1
+
+        if command -v tput &> /dev/null; then
+            local colors
+            colors=$(tput colors)
+            [[ "$colors" -ge 8 ]] || return 1
+        fi
+
+        return 0
+    fi
+
+    return 1
+}
+
+# log_file
+# Retorna o caminho do arquivo de log configurado ou /dev/null se não configurado.
+log_file() {
+    local log_file="${UNMM_LIB_LOGGING_LOG_FILE:-/dev/null}"
+
+    if [[ "$log_file" != /dev/null ]]; then
+        local log_dir
+        log_dir=$(dirname "$log_file")
+        if [[ ! -d "$log_dir" ]]; then
+            return 1
+        fi
+        if [[ ! -w "$log_dir" ]]; then
+            return 2
+        fi
+    fi
+
+    echo "$log_file"
+}

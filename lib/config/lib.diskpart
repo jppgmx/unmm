@@ -1,0 +1,33 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_LIB_CONFIG_DISKPART_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_LIB_CONFIG_DISKPART_LOADED=true
+
+# backend
+# Obtém o backend de manipulação de disco configurado (qcow ou raw).
+backend() {
+    local backend="${UNMM_LIB_DISKPART_BACKEND:-qcow}"
+    if [[ ! "$backend" =~ ^(qcow|raw)$ ]]; then
+        log_error "Backend inválido: $backend. Use 'qcow' ou 'raw'."
+        log_error "Consulte unmm.conf para configurar."
+        exit 1
+    fi
+
+    echo "$backend"
+}
+
+# use_partprobe
+# Checa se o uso do partprobe após a criação de partições está habilitado.
+use_partprobe() {
+    local use_probe="${UNMM_LIB_DISKPART_PARTPROBE_AFTER_PARTITION:-true}"
+    [[ "$use_probe" == true ]]
+}
+
+# use_udev_settle
+# Checa se o uso do udev settle após a criação de partições está habilitado.
+use_udev_settle() {
+    local use_udev="${UNMM_LIB_DISKPART_UDEV_SETTLE:-true}"
+    [[ "$use_udev" == true ]]
+}
