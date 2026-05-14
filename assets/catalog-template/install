@@ -1,0 +1,41 @@
+#!/bin/bash
+# UNMM Custom Catalog
+
+_catalog_install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${_catalog_install_dir}/../../lib/common.sh"
+# Load INI configuration via confldr.py
+load_config "${_catalog_install_dir}/catalog.conf"
+# shellcheck source=config/catalog
+with_config ./config/catalog
+unset _catalog_install_dir
+
+# Import base catalog behavior (required)
+source "$(dirname "$0")/base"
+
+#
+#   Argumentos:
+#   disk_device - Dispositivo de blocos no formato DISPOSITIVO:ARQUIVO:BACKEND.
+#
+catalog_install() {
+    local disk_device="$1"
+    local CATALOG_INSTALL_ARG_DEVICE image_path backend
+
+    if [[ -n "$disk_device" ]]; then
+        IFS=':' read -r CATALOG_INSTALL_ARG_DEVICE image_path backend <<< "$disk_device"
+    else
+        CATALOG_INSTALL_ARG_DEVICE="${CATALOG_INSTALL_ARG_DEVICE:-}"
+        image_path="${CATALOG_INSTALL_ARG_DISKIMAGEPATH:-}"
+        backend="${CATALOG_INSTALL_ARG_BACKEND:-}"
+    fi
+
+    local CATALOG_INSTALL_ARG_MOUNTPOINT="${CATALOG_INSTALL_ARG_MOUNTPOINT:-${MOUNTPOINT:-${UNMM_GENERAL_MOUNT_POINT:-/mnt/unmm}}}"
+
+    _base_install
+
+    log_info "Customizando $(catalog_display_name)..."
+
+    # Add commands here
+
+    log_info "$(catalog_display_name) concluido."
+}

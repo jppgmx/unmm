@@ -6,11 +6,16 @@
 # Criador: João Paulo (o Jppgmx)
 #
 
-CATALOG_NAME="base"
-CATALOG_DISPLAY_NAME="Base Catalog"
-CATALOG_VERSION="1.0.0"
-CATALOG_DESCRIPTION="Base de todo o catálogo."
-CATALOG_PREFFERED_SIZE="4G"
+_catalog_install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${_catalog_install_dir}/../../lib/common.sh"
+# Load INI configuration via confldr.py
+load_config "${_catalog_install_dir}/catalog.conf"
+# shellcheck source=config/catalog
+with_config ./config/catalog
+# shellcheck source=lib/config/system
+with_config system
+unset _catalog_install_dir
 
 _BASE_SYSTEM_PACKAGES_ESSENTIALS=(
     "linux-image-generic" "linux-firmware" "initramfs-tools" "zstd"
@@ -372,20 +377,25 @@ _base_write_startup_script() {
 # Este é o núcleo da instalação do catálogo "base".
 _base_install() {
     export DEBIAN_FRONTEND=noninteractive
-    log_info "Preparando instalação do catálogo $CATALOG_NAME..."
+    log_info "Preparando instalação do catálogo $(catalog_name)..."
 
     chroot_mount_system "$CATALOG_INSTALL_ARG_DEVICE" "$CATALOG_INSTALL_ARG_MOUNTPOINT"
     _base_deboostrap "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_BASE_SYSTEM_UBUNTU_CODENAME" "$_BASE_SYSTEM_UBUNTU_MIRROR"
 
-    log_info "Instalação básica do catálogo $CATALOG_NAME concluída."
+    log_info "Instalação básica do catálogo $(catalog_name) concluída."
     log_info "Preparando ambiente chroot para próxima etapa..."
 
     chroot_prepare_environment "$CATALOG_INSTALL_ARG_MOUNTPOINT"
     log_info "Ambiente chroot preparado."
 
-    local swap_line
-    swap_line=$(_base_write_swapfile "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$_BASE_SYSTEM_PREFERRED_SWAP_SIZE")
-    _base_write_fstab_file "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$swap_line"
+    local swap_line=""
+    if enable_swap; then
+        swap_line=$(_base_write_swapfile "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$(swap_size)")
+        _base_write_fstab_file "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$swap_line"
+    else
+        log_info "Swap desabilitado pela configuração; pulando criação do swapfile."
+        _base_write_fstab_file "$CATALOG_INSTALL_ARG_MOUNTPOINT"
+    fi
 
     log_warning "AVISO: Algumas saídas normais do APT são imprimidas no stderr, podendo parecer que há erros quando não há."
 
@@ -419,21 +429,26 @@ _base_install() {
     _base_grub_install "$CATALOG_INSTALL_ARG_MOUNTPOINT" "$CATALOG_INSTALL_ARG_DEVICE" "$CATALOG_INSTALL_ARG_BOOTMODE"
     _base_write_startup_script "$CATALOG_INSTALL_ARG_MOUNTPOINT"
 
-    log_info "Instalação do catálogo $CATALOG_NAME concluída."
+    log_info "Instalação do catálogo $(catalog_name) concluída."
 }
 
 
-#   Argumentos globais:
-#
-# CATALOG_INSTALL_ARG_DEVICE        - Dispositivo de bloco onde a imagem está montada.
-# CATALOG_INSTALL_ARG_MOUNTPOINT    - Ponto de montagem do sistema de arquivos raiz.
-# CATALOG_INSTALL_ARG_HOSTNAME      - Nome do host a ser configurado.
-# CATALOG_INSTALL_ARG_USERNAME      - Nome do usuário a ser criado.
-# CATALOG_INSTALL_ARG_PASSWORD      - Senha do usuário a ser criado.
-# CATALOG_INSTALL_ARG_BOOTMODE      - Modo de boot (bios, uefi, hybrid).
-# CATALOG_INSTALL_ARG_DISKIMAGEPATH - Caminho para a imagem de disco.
-# CATALOG_INSTALL_ARG_SIZE          - Tamanho da imagem de disco.
+#   Argumentos:
+#   disk_device - Dispositivo de blocos no formato DISPOSITIVO:ARQUIVO:BACKEND.
 #
 catalog_install() {
+    local disk_device="$1"
+    local CATALOG_INSTALL_ARG_DEVICE image_path backend
+
+    IFS=':' read -r CATALOG_INSTALL_ARG_DEVICE image_path backend <<< "$disk_device"
+    local CATALOG_INSTALL_ARG_MOUNTPOINT="${MOUNTPOINT:-$(mountpoint)}"
+    local CATALOG_INSTALL_ARG_HOSTNAME="${HOSTNAME:-${UNMM_SYSTEM_HOSTNAME:-}}"
+    local CATALOG_INSTALL_ARG_USERNAME="${USERNAME:-${UNMM_SYSTEM_USER:-}}"
+    local CATALOG_INSTALL_ARG_PASSWORD="${PASSWORD:-${UNMM_SYSTEM_PASSWORD:-}}"
+    local CATALOG_INSTALL_ARG_BOOTMODE="${BOOT_MODE:-$(boot_mode)}"
+    local CATALOG_INSTALL_ARG_DISKIMAGEPATH="${image_path}"
+    local CATALOG_INSTALL_ARG_SIZE
+    CATALOG_INSTALL_ARG_SIZE=$(stat -c %s "$image_path")
+
     _base_install
 }

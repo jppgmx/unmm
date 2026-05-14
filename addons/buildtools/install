@@ -1,0 +1,67 @@
+#!/bin/bash
+#
+# UNMM Build Tools Add-on
+# Sob licença MIT
+#
+# Criador: João Paulo (o Jppgmx)
+#
+
+_addon_install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${_addon_install_dir}/../../lib/common.sh"
+# Load INI configuration via confldr.py
+load_config "${_addon_install_dir}/addon.conf"
+# shellcheck source=config/addon
+with_config ./config/addon
+unset _addon_install_dir
+
+# Array de pacotes a serem instalados (opcional)
+_BT_ADDON_PACKAGES=(
+    "build-essential"
+    "gcc"
+    "g++"
+    "make"
+    "cmake"
+    "git"
+    "pkg-config"
+    "tar"
+    "wget"
+    "unzip"
+    "curl"
+)
+
+#
+#   Argumentos:
+#   disk_device - Dispositivo de blocos no formato DISPOSITIVO:ARQUIVO:BACKEND.
+#
+addon_install() {
+    local disk_device="$1"
+    local ADDON_INSTALL_ARG_DEVICE image_path backend
+
+    if [[ -n "$disk_device" ]]; then
+        IFS=':' read -r ADDON_INSTALL_ARG_DEVICE image_path backend <<< "$disk_device"
+    else
+        ADDON_INSTALL_ARG_DEVICE="${ADDON_INSTALL_ARG_DEVICE:-}"
+        image_path="${ADDON_INSTALL_ARG_DISKIMAGEPATH:-}"
+        backend="${ADDON_INSTALL_ARG_BACKEND:-}"
+    fi
+    local ADDON_INSTALL_ARG_MOUNTPOINT="${ADDON_INSTALL_ARG_MOUNTPOINT:-${MOUNTPOINT:-${UNMM_GENERAL_MOUNT_POINT:-/mnt/unmm}}}"
+
+    log_info "Instalando $(addon_display_name)..."
+    # Instalar pacotes se definidos
+
+    if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" apt-get update; then
+        log_error "Falha ao atualizar a lista de pacotes."
+        return 1
+    fi
+
+    if [ ${#_BT_ADDON_PACKAGES[@]} -gt 0 ]; then
+        log_verbose "Instalando pacotes de build..."
+        if ! chroot_call_logged "$ADDON_INSTALL_ARG_MOUNTPOINT" $APT_GET_COMMAND "${_BT_ADDON_PACKAGES[@]}"; then
+            log_error "Falha ao instalar pacotes de build."
+            return 1
+        fi
+    fi
+
+    log_info "$(addon_display_name) instalado com sucesso."
+}

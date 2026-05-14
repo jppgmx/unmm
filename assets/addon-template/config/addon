@@ -1,0 +1,42 @@
+# shellcheck shell=bash
+# UNMM Add-on Configuration
+# Auto-generated module with metadata getters
+
+if [[ -n "${UNMM_ADDON_CONFIG_LOADED:-}" ]]; then return 0; fi
+UNMM_ADDON_CONFIG_LOADED=1
+
+_addon_config_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_addon_id="$(basename "$(dirname "$_addon_config_dir")")"
+_addon_id_upper="$(echo "$_addon_id" | tr '[:lower:]' '[:upper:]')"
+
+# addon_name
+# Returns the name of the add-on, or defaults to auto-derived ID.
+addon_name() {
+    local env_var="UNMM_ADDON_${_addon_id_upper}_NAME"
+    local name="${!env_var:-}"
+    echo "${name:-$_addon_id}"
+}
+
+# addon_display_name
+# Returns the display name of the add-on, checking env var from INI first.
+addon_display_name() {
+    local env_var="UNMM_ADDON_${_addon_id_upper}_DISPLAY_NAME"
+    local display_name="${!env_var:-}"
+    echo "${display_name:-Custom Add-on}"
+}
+
+# addon_version
+# Returns the add-on version, checking env var from INI first.
+addon_version() {
+    local env_var="UNMM_ADDON_${_addon_id_upper}_VERSION"
+    local version="${!env_var:-}"
+    echo "${version:-1.0.0}"
+}
+
+# addon_description
+# Returns the add-on description, checking env var from INI first.
+addon_description() {
+    local env_var="UNMM_ADDON_${_addon_id_upper}_DESCRIPTION"
+    local description="${!env_var:-}"
+    echo "${description:-Add-on for UNMM}"
+}

@@ -1,0 +1,51 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_CATALOG_CONFIG_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_CATALOG_CONFIG_LOADED=true
+
+# Derivar ID do catálogo automaticamente a partir do caminho do arquivo
+_catalog_config_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_catalog_id="$(basename "$(dirname "$_catalog_config_dir")")"
+_catalog_id_upper="$(echo "$_catalog_id" | tr '[:lower:]' '[:upper:]')"
+
+# catalog_name
+# Retorna o nome do catálogo, verificando variável de env do INI primeiro.
+catalog_name() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_NAME"
+    local name="${!env_var:-}"
+    echo "${name:-$_catalog_id}"
+}
+
+# catalog_display_name
+# Retorna o nome de exibição do catálogo, verificando variável de env do INI primeiro.
+catalog_display_name() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_DISPLAY_NAME"
+    local display_name="${!env_var:-}"
+    echo "${display_name:-Base Catalog}"
+}
+
+# catalog_version
+# Retorna a versão do catálogo, verificando variável de env do INI primeiro.
+catalog_version() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_VERSION"
+    local version="${!env_var:-}"
+    echo "${version:-1.0.0}"
+}
+
+# catalog_description
+# Retorna a descrição do catálogo, verificando variável de env do INI primeiro.
+catalog_description() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_DESCRIPTION"
+    local description="${!env_var:-}"
+    echo "${description:-Base catalog for creating minimal Ubuntu Noble images.}"
+}
+
+# catalog_preferred_size
+# Retorna o tamanho preferido para o catálogo, verificando variável de env do INI primeiro.
+catalog_preferred_size() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_PREFERRED_SIZE"
+    local preferred_size="${!env_var:-}"
+    echo "${preferred_size:-4G}"
+}

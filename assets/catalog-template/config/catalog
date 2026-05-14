@@ -1,0 +1,51 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_CATALOG_CONFIG_LOADED:-}" ]]; then
+    return 0
+fi
+UNMM_CATALOG_CONFIG_LOADED=true
+
+# Auto-derive catalog ID from the file path
+_catalog_config_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_catalog_id="$(basename "$(dirname "$_catalog_config_dir")")"
+_catalog_id_upper="$(echo "$_catalog_id" | tr '[:lower:]' '[:upper:]')"
+
+# catalog_name
+# Returns the catalog name, checking env var from INI first.
+catalog_name() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_NAME"
+    local name="${!env_var:-}"
+    echo "${name:-$_catalog_id}"
+}
+
+# catalog_display_name
+# Returns the display name, checking env var from INI first.
+catalog_display_name() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_DISPLAY_NAME"
+    local display_name="${!env_var:-}"
+    echo "${display_name:-Custom Catalog}"
+}
+
+# catalog_version
+# Returns the catalog version, checking env var from INI first.
+catalog_version() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_VERSION"
+    local version="${!env_var:-}"
+    echo "${version:-1.0.0}"
+}
+
+# catalog_description
+# Returns the catalog description, checking env var from INI first.
+catalog_description() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_DESCRIPTION"
+    local description="${!env_var:-}"
+    echo "${description:-Catalog for UNMM}"
+}
+
+# catalog_preferred_size
+# Returns the preferred size, checking env var from INI first.
+catalog_preferred_size() {
+    local env_var="UNMM_CATALOG_${_catalog_id_upper}_PREFERRED_SIZE"
+    local preferred_size="${!env_var:-}"
+    echo "${preferred_size:-4G}"
+}
