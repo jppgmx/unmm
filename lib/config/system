@@ -1,0 +1,49 @@
+#!/usr/bin/bash
+
+if [[ -n "${UNMM_LIB_CONFIG_SYSTEM_LOADED:-}" ]]; then
+	return 0
+fi
+UNMM_LIB_CONFIG_SYSTEM_LOADED=true
+
+boot_mode() {
+	local mode="${UNMM_SYSTEM_BOOT_MODE:-bios}"
+
+	if [[ ! "$mode" =~ ^(bios|uefi|hybrid)$ ]]; then
+		log_error "Valor inválido para UNMM_SYSTEM_BOOT_MODE: $mode"
+		log_error "Valores permitidos: bios, uefi, hybrid"
+		exit 1
+	fi
+
+	echo "$mode"
+}
+
+enable_swap() {
+	local enabled="${UNMM_SYSTEM_ENABLE_SWAP:-true}"
+	[[ "$enabled" == "true" || "$enabled" == "1" ]]
+}
+
+swap_size() {
+	local size="${UNMM_SYSTEM_SWAP_SIZE:-1G}"
+
+	if ! uc_convert "$size" B >/dev/null 2>&1; then
+		log_error "Tamanho inválido para UNMM_SYSTEM_SWAP_SIZE: $size"
+		exit 1
+	fi
+
+	echo "$size"
+}
+
+hostname() {
+	local value="${UNMM_SYSTEM_HOSTNAME:-luimg}"
+	echo "$value"
+}
+
+user() {
+	local value="${UNMM_SYSTEM_USER:-user}"
+	echo "$value"
+}
+
+password() {
+	local value="${UNMM_SYSTEM_PASSWORD:-password}"
+	echo "$value"
+}

@@ -5,7 +5,6 @@
     Driver para a lib/logging.sh na função exec_logged2.
 """
 
-import shlex
 import subprocess as sp
 import sys
 
