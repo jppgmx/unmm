@@ -73,29 +73,23 @@ Notas:
   - A ordem dos add-ons importa, pois eles serão aplicados na sequência fornecida.
 
 Exemplo:
-    # Criar uma imagem básica (usa catálogo 'base' e salva em ./output/unmm-system.img)
+    # Criar uma imagem básica (usa catálogo 'base' e salva em ./build)
     sudo ./unmm.sh
 
-    # Criar uma imagem com múltiplos add-ons
-    sudo ./unmm.sh base build-tools network-tools
+    # Criar uma imagem com múltiplos add-ons existentes
+    sudo ./unmm.sh base buildtools lxqt
 
-    # Criar uma máquina virtual completa em formato OVA
-    sudo ./unmm.sh --create-ova base lxqt
+    # Exportar como OVA (tipo/subtipo)
+    sudo ./unmm.sh -f ova,generic base
 
     # Personalizar hostname e usuário
     sudo ./unmm.sh -n webserver -u admin -p MyP@ssw0rd base
 
     # Criar imagem UEFI com tamanho específico
-    sudo ./unmm.sh -b uefi --maximum-size=10G -o /tmp server
-
-    # Criar sistema com catálogo específico e salvar em diretório customizado
-    sudo ./unmm.sh -o /var/images -n database-server server
+    sudo ./unmm.sh -b uefi --maximum-size=10G -o /tmp base
 
     # Modo verbose para debug e troubleshooting
     sudo ./unmm.sh --verbose -n test-system base
-
-    # Criar imagem híbrida (BIOS + UEFI) com add-ons de segurança
-    sudo ./unmm.sh -b hybrid security-suite monitoring-tools base
 
     # Incluir licença personalizada na imagem
     sudo ./unmm.sh -l /path/to/LICENSE.txt -n production-server base
