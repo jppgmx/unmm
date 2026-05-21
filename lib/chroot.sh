@@ -147,7 +147,28 @@ chroot_call_logged() {
 }
 
 # chroot_cleanup
-# Realiza a limpeza do sistema dentro do chroot e desmonta todas as partições montadas.
+# Realiza limpeza profunda do sistema dentro do chroot e desmonta todas as partições montadas.
+# Inclui limpeza de cache apt, logs, histórico, chaves SSH, leases DHCP, machine-id e swap.
+#
+# Argumentos:
+#   Nenhum
+#
+# Retorna:
+#   - return: 0 se limpeza concluída (com ou sem avisos)
+#   - return: 0 sempre (não falha mesmo se alguma etapa der warning)
+#
+# Variáveis:
+#   - SYSTEM_MOUNTPOINTS: array global de pontos de montagem a desmontar
+#
+# Efeitos colaterais:
+#   - Executa múltiplos comandos dentro do chroot (apt-get clean, rm, truncate, systemctl, etc)
+#   - Desmonta todos os pontos de montagem
+#   - Limpa cache, logs, histórico e identificadores únicos do sistema
+#   - Remove chaves SSH do host
+#
+# Notas:
+#   - Avisos (log_warning) são exibidos para etapas que falham, mas a limpeza continua
+#   - Essencial para garantir que imagens reutilizáveis não tenham dados residuais
 chroot_cleanup() {
     if [[ ${#SYSTEM_MOUNTPOINTS[@]} -eq 0 ]]; then
         log_warning "Não há nada para limpar."

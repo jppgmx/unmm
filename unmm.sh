@@ -22,7 +22,22 @@ ADDONS_DIR="$SCRIPT_DIR/addons"
 ASSETS_DIR="$SCRIPT_DIR/assets"
 
 # help
-# Printa a mensagem de ajuda
+# Exibe mensagem de ajuda com uso, opções CLI e exemplos.
+# Mostra informações sobre argumentos de catálogos, add-ons e flags de configuração.
+#
+# Argumentos:
+#   Nenhum (geralmente chamada antes de exit 0)
+#
+# Retorna:
+#   - echo: Mensagem de ajuda formatada
+#   - return: 0 sempre
+#
+# STDIN/STDOUT:
+#   - stdout: Texto de ajuda completo com exemplos
+#
+# Notas:
+#   - Disponível via -h, --help ou runner_list_available via --list
+#   - Mostra todos os aliases de opções CLI para configuração
 help() {
     cat << EOF
 UNMM - Ubuntu Noble Minimal Maker

@@ -47,7 +47,25 @@ _ARCH_SPECIFIC_DEPENDENCIES=(
 
 _PYTHON_VERSION_REQUIRED="3.11"
 
-function check_os() {
+# check_os
+# Detecta o tipo de distribuição Linux lendo /etc/os-release e retorna identificador: "deb" ou "arch".
+#
+# Argumentos:
+#   Nenhum
+#
+# Retorna:
+#   - echo: "deb" para distribuições Debian-based, "arch" para Arch-based
+#   - return: 0 se distribuição detectada
+#   - return: 1 se /etc/os-release não existe ou distribuição não suportada
+#
+# Erros:
+#   - log_error se /etc/os-release não encontrado
+#   - log_error se distribuição não é Debian ou Arch baseado
+#
+# Dependências:
+#   - grep, cut, tr
+#   - Arquivo /etc/os-release
+check_os() {
     local id_like=""
     local id=""
     if [ -f /etc/os-release ]; then
@@ -82,6 +100,26 @@ function check_if_supports_debootstrap() {
     return 0
 }
 
+# check_python_version
+# Verifica se Python 3 está instalado e se a versão é >= 3.11 (conforme _PYTHON_VERSION_REQUIRED).
+#
+# Argumentos:
+#   Nenhum
+#
+# Retorna:
+#   - return: 0 se Python 3 >= 3.11 está instalado
+#   - return: 1 se Python 3 não encontrado ou versão < 3.11
+#
+# Erros:
+#   - log_error se python3 não encontrado (msg: "Python 3 não encontrado. Por favor, instale Python 3.11 ou superior.")
+#   - log_error se versão < 3.11 (msg: "Versão do Python é X.Y.Z. Por favor, instale Python 3.11 ou superior.")
+#
+# Variáveis:
+#   - _PYTHON_VERSION_REQUIRED (padrão: "3.11")
+#
+# Dependências:
+#   - python3
+#   - command, awk, printf, sort
 check_python_version() {
     if ! command -v python3 &> /dev/null; then
         log_error "Python 3 não encontrado. Por favor, instale Python 3.11 ou superior."

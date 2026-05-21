@@ -38,6 +38,18 @@ fi
 # Para os próximos comentários dessa lib, usaremos esses termos.
 #
 
+# _diskpart_is_tracked_device <device>
+# Verifica se um dispositivo está na lista global de dispositivos rastreados (TRACKED_DISKPART_DEVICES).
+#
+# Argumentos:
+#   device - Dispositivo a verificar (ex: /dev/nbd0, /dev/loop0)
+#
+# Retorna:
+#   - return: 0 se dispositivo está rastreado
+#   - return: 1 se dispositivo não está rastreado
+#
+# Variáveis:
+#   - TRACKED_DISKPART_DEVICES: array global de dispositivos rastreados
 _diskpart_is_tracked_device() {
     local device="$1"
     if [[ " ${TRACKED_DISKPART_DEVICES[*]} " == *" $device "* ]]; then
@@ -46,6 +58,19 @@ _diskpart_is_tracked_device() {
     return 1
 }
 
+# _diskpart_parse_disk_image <disk_image>
+# Parseia uma string DiskImage no formato "ARQUIVO[:BACKEND]" e valida.
+# Retorna em formato "image_path:backend".
+#
+# Argumentos:
+#   disk_image - String no formato "arquivo.qcow2" ou "arquivo.qcow2:qcow"
+#
+# Retorna:
+#   - echo: String formatada "caminho:backend"
+#   - exit: 1 se image_path estiver vazio
+#
+# Erros:
+#   - log_error + exit 1 se DiskImage inválido (sem caminho)
 _diskpart_parse_disk_image() {
     local disk_image="$1"
     local image_path backend
@@ -65,6 +90,19 @@ _diskpart_parse_disk_image() {
     echo "$image_path:$backend"
 }
 
+# _diskpart_parse_disk_device <disk_device>
+# Parseia uma string DiskDevice no formato "DISPOSITIVO[:ARQUIVO[:BACKEND]]" e valida.
+# Retorna em formato "device:image_path:backend".
+#
+# Argumentos:
+#   disk_device - String no formato "/dev/nbd0" ou "/dev/nbd0:/path/img.qcow2:qcow"
+#
+# Retorna:
+#   - echo: String formatada "dispositivo:caminho:backend"
+#   - exit: 1 se dispositivo estiver vazio
+#
+# Erros:
+#   - log_error + exit 1 se DiskDevice inválido (sem dispositivo)
 _diskpart_parse_disk_device() {
     local disk_device="$1"
     local device image backend
@@ -85,6 +123,14 @@ _diskpart_parse_disk_device() {
     echo "$device:$image:$backend"
 }
 
+# _diskpart_guess_format_from_path <path>
+# Infere o formato de backend baseado na extensão do arquivo.
+#
+# Argumentos:
+#   path - Caminho do arquivo de imagem (ex: /path/disk.qcow2)
+#
+# Retorna:
+#   - echo: "qcow2" para *.qcow2, "raw" para *.img, "vmdk" para *.vmdk, "" se não reconhecido
 _diskpart_guess_format_from_path() {
     local path="$1"
 
@@ -104,6 +150,14 @@ _diskpart_guess_format_from_path() {
     esac
 }
 
+# _diskpart_infer_backend_from_device <device>
+# Infere o tipo de backend baseado no padrão do dispositivo.
+#
+# Argumentos:
+#   device - Dispositivo (ex: /dev/nbd0, /dev/loop0)
+#
+# Retorna:
+#   - echo: "qcow" para /dev/nbd*, "raw" para /dev/loop*, "" se não reconhecido
 _diskpart_infer_backend_from_device() {
     local device="$1"
 
@@ -119,12 +173,44 @@ _diskpart_infer_backend_from_device() {
     echo ""
 }
 
+# _diskpart_run_udev_settle
+# Executa udevadm settle se configurado via use_udev_settle().
+#
+# Argumentos:
+#   Nenhum
+#
+# Retorna:
+#   - return: 0 sempre (logging é feito por exec_logged se utilizado)
+#
+# Dependências:
+#   - use_udev_settle() configuração
+#   - udevadm (se use_udev_settle retorna verdadeiro)
+#   - exec_logged
+#
+# Efeitos colaterais:
+#   - Executa udevadm settle se habilitado
 _diskpart_run_udev_settle() {
     if use_udev_settle; then
         exec_logged "DISKPART" udevadm settle
     fi
 }
 
+# _diskpart_run_partprobe <device>
+# Executa partprobe em um dispositivo se configurado via use_partprobe().
+#
+# Argumentos:
+#   device - Dispositivo de bloco (ex: /dev/nbd0)
+#
+# Retorna:
+#   - return: 0 sempre (logging é feito por exec_logged se utilizado)
+#
+# Dependências:
+#   - use_partprobe() configuração
+#   - partprobe (se use_partprobe retorna verdadeiro)
+#   - exec_logged
+#
+# Efeitos colaterais:
+#   - Executa partprobe no dispositivo se habilitado
 _diskpart_run_partprobe() {
     local device="$1"
     if use_partprobe; then
@@ -139,7 +225,14 @@ _diskpart_run_partprobe() {
 #   size - O tamanho a ser validado (ex: "500M", "10G", "1GiB")
 #
 # Retorna:
-#   Nada ou erro se o tamanho for inválido.
+#   - return: 0 se tamanho válido
+#   - exit: 1 se tamanho inválido
+#
+# Erros:
+#   - log_error + exit 1 se formato de tamanho inválido
+#
+# Dependências:
+#   - uc_convert() de lib/uc.sh
 _validate_size() {
     local size="$1"
     if ! uc_convert "$size" B >/dev/null 2>&1; then
@@ -148,6 +241,25 @@ _validate_size() {
     fi
 }
 
+
+# backend_extension
+# Retorna a extensão de arquivo apropriada para o backend configurado (qcow→.qcow2, raw→.img).
+#
+# Argumentos:
+#   Nenhum
+#
+# Retorna:
+#   - echo: Extensão do arquivo (sem ponto): "qcow2" ou "img"
+#   - exit: 1 se backend for desconhecido
+#
+# Erros:
+#   - log_error + exit 1 se backend desconhecido
+#
+# Variáveis:
+#   - backend() deve retornar "qcow" ou "raw"
+#
+# Dependências:
+#   - backend() configuração
 backend_extension() {
     case "$(backend)" in
         qcow)
@@ -164,14 +276,22 @@ backend_extension() {
 }
 
 # diskpart_filename <name>
-# Gera um nome de arquivo para a imagem de disco com a extensão correta do backend
+# Gera um nome de arquivo para imagem de disco com extensão correta do backend configurado.
 #
 # Argumentos:
-#   name - O nome base para o arquivo de imagem de disco (sem extensão)
+#   name - Nome base para arquivo (sem extensão; ex: "ubuntu-system")
 #
 # Retorna:
-#   O nome do arquivo com a extensão apropriada para o backend configurado.
-#   Ex.: diskpart_filename "disk" -> "disk.qcow2" para backend qcow, ou "disk.img" para backend raw.
+#   - echo: Nome completo com extensão (ex: "ubuntu-system.qcow2" ou "ubuntu-system.img")
+#
+# Variáveis:
+#   - backend() deve retornar "qcow" ou "raw"
+#
+# Dependências:
+#   - backend_extension() para obter extensão
+#
+# Exemplos:
+#   diskpart_filename "disk" -> "disk.qcow2" (se backend=qcow) ou "disk.img" (se backend=raw)
 diskpart_filename() {
     local name="$1"
     local ext
@@ -180,15 +300,27 @@ diskpart_filename() {
 }
 
 # diskpart_create_disk <output_path> <size>
-# Cria uma imagem de disco usando o backend configurado
+# Cria uma imagem de disco (QCOW2 ou RAW) usando o backend configurado.
 #
 # Argumentos:
-#   output_path - Caminho onde a imagem de disco será criada
-#   size        - Tamanho da imagem de disco (ex: 500M, 10G)
+#   output_path - Caminho de saída para arquivo de imagem
+#   size - Tamanho em unidades SI/IEC (ex: "500M", "10G")
 #
 # Retorna:
-#   Um DiskImage se criado com êxito, ou sai com erro se a criação falhar.
+#   - echo: DiskImage no formato "caminho:backend"
+#   - exit: 1 se criação falhar
 #
+# Erros:
+#   - Sai com exit 1 se backend desconhecido
+#   - Delegada a _diskpart_create_qcow_disk ou _diskpart_create_raw_disk para validação
+#
+# Dependências:
+#   - backend() para determinar tipo
+#   - _diskpart_create_qcow_disk ou _diskpart_create_raw_disk
+#   - qemu-img
+#
+# Efeitos colaterais:
+#   - Cria arquivo de imagem em disco
 diskpart_create_disk() {
     local output_path="$1"
     local size="$2"

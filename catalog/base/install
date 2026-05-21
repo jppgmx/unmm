@@ -432,10 +432,40 @@ _base_install() {
     log_info "Instalação do catálogo $(catalog_name) concluída."
 }
 
-
-#   Argumentos:
-#   disk_device - Dispositivo de blocos no formato DISPOSITIVO:ARQUIVO:BACKEND.
+# catalog_install <disk_device>
+# Função principal do catálogo base que coordena toda a instalação do sistema.
+# Parseia argumentos do DiskDevice, extrai configuração e chama _base_install.
 #
+# Argumentos:
+#   disk_device - Dispositivo de blocos no formato "DISPOSITIVO:ARQUIVO:BACKEND" (ex: /dev/nbd0:/path/disk.qcow2:qcow)
+#
+# Retorna:
+#   - return: 0 se instalação completada (delegada a _base_install)
+#   - exit: 1 se alguma etapa falhar (via _base_install e subfunções)
+#
+# Variáveis (extraídas para ambiente global):
+#   - CATALOG_INSTALL_ARG_DEVICE: dispositivo parseado
+#   - CATALOG_INSTALL_ARG_MOUNTPOINT: ponto de montagem (MOUNTPOINT env ou mountpoint())
+#   - CATALOG_INSTALL_ARG_HOSTNAME: hostname (HOSTNAME env ou UNMM_SYSTEM_HOSTNAME)
+#   - CATALOG_INSTALL_ARG_USERNAME: usuário (USERNAME env ou UNMM_SYSTEM_USER)
+#   - CATALOG_INSTALL_ARG_PASSWORD: senha (PASSWORD env ou UNMM_SYSTEM_PASSWORD)
+#   - CATALOG_INSTALL_ARG_BOOTMODE: modo boot (BOOT_MODE env ou boot_mode())
+#   - CATALOG_INSTALL_ARG_DISKIMAGEPATH: caminho da imagem
+#   - CATALOG_INSTALL_ARG_SIZE: tamanho da imagem em bytes
+#
+# Dependências:
+#   - _base_install (função principal)
+#   - mountpoint(), boot_mode() configuradores
+#   - stat para obter tamanho do arquivo
+#
+# Pre-requisitos:
+#   - Disco deve estar criado e connected (DiskDevice válido)
+#   - Variáveis de ambiente ou configuração devem estar setadas
+#
+# Efeitos colaterais:
+#   - Executa toda a instalação do Ubuntu Noble no disco
+#   - Cria e modifica partições
+#   - Instala pacotes via debootstrap
 catalog_install() {
     local disk_device="$1"
     local CATALOG_INSTALL_ARG_DEVICE image_path backend

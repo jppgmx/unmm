@@ -20,6 +20,19 @@ export UNMM_VERSION="1.0.0"
 # Posted by Nicholas Sushkin, modified by community. See post 'Timeline' for change history
 # Retrieved 2026-01-02, License - CC BY-SA 4.0
 
+# join_by <delimiter> (stdin) <item1> [item2...]
+# Une múltiplos itens em uma única string separados por um delimitador.
+#
+# Argumentos:
+#   delimiter - Caractere ou string usada como separador entre itens
+#   item1... - Um ou mais itens a serem unidos
+#
+# Retorna:
+#   - echo: String com itens separados pelo delimitador
+#
+# Exemplos:
+#   join_by "," foo bar baz -> foo,bar,baz
+#   join_by ":" path1 path2 -> path1:path2
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
 _common_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,6 +40,26 @@ _common_config_lib_dir="${_common_lib_dir}/config"
 # shellcheck source=lib/uc.sh
 source "${_common_lib_dir}/uc.sh"
 
+# with_config <modulo1> [modulo2...]
+# Carrega módulos de configuração INI via source, resolvendo caminhos absolutos, relativos ou do lib/config/.
+# Exporta variáveis de ambiente baseadas no arquivo INI carregado.
+#
+# Argumentos:
+#   modulo1... - Nome do módulo (em lib/config/), caminho relativo ou caminho absoluto
+#
+# Retorna:
+#   - return: 0 se todos os módulos foram carregados com sucesso
+#   - return: 1 se algum arquivo de configuração não foi encontrado
+#
+# Erros:
+#   - Sai com retorno 1 se módulo não encontrado (msg: "Módulo de configuração não encontrado")
+#
+# Variáveis:
+#   - Exporta variáveis de ambiente conforme definido nos arquivos INI carregados
+#
+# Efeitos colaterais:
+#   - Modifica o ambiente shell via source de arquivos
+#   - Define e exporta variáveis de configuração
 with_config() {
     local config_modules=("$@")
 
@@ -106,7 +139,17 @@ to_absolute_path() {
 }
 
 # logo
-# Mostra a logo do projeto
+# Exibe a logo e informações de versão do projeto UNMM no stdout.
+#
+# Argumentos:
+#   Nenhum
+#
+# Retorna:
+#   - echo: Logo, copyright, licença e versão
+#   - return: 0 sempre
+#
+# Variáveis:
+#   - UNMM_VERSION: versão do projeto (padrão: 1.0.0)
 logo() {
     echo "Ubuntu Noble Minimal Maker (UNMM)."
     echo "Copyright (c) 2025 jppgmx. All rights reserved."
@@ -115,11 +158,37 @@ logo() {
     echo
 }
 
-# load_config <config_file...> [setlist]
-# Carrega as configurações a partir de um ou mais arquivos de configuração pelo confldr.py
+# load_config <arquivo_config[:arquivo_config2...]> [Secao.Chave=Valor...]
+# Carrega configurações INI via confldr.py e as exporta como variáveis de ambiente.
+# Pode processar múltiplos arquivos (separados por ':') e aplicar sobrescritas (formato: Secao.Chave=Valor).
+#
 # Argumentos:
-#   config_file... - Um ou mais arquivos de configuração a serem processados, separados por dois pontos.
-#   setlist - Lista com Secao.Subsecao.Chave=Valor para sobrepor ou adicionar configurações, separados por espaço.
+#   arquivo_config - Caminho para arquivo(s) de configuração separados por dois-pontos
+#   Secao.Chave=Valor - Sobrescritas de configuração (opcional)
+#
+# Retorna:
+#   - return: 0 se configuração foi processada com sucesso
+#   - return: 1 e exit se confldr.py falhou ou arquivos inválidos
+#
+# Erros:
+#   - Sai com exit 1 e mensagem "**Falha ao tentar source configuração processada" se source falha
+#   - Sai com exit 1 e mensagem "**Falha ao processar configuração com confldr.py" se confldr retorna erro
+#
+# Variáveis:
+#   - Exporta UNMM_* e outras variáveis conforme arquivos INI
+#   - __confldr_failed: flag interna para detectar falhas do confldr
+#
+# Dependências:
+#   - python3
+#   - assets/confldr.py (script python que processa INI)
+#
+# Efeitos colaterais:
+#   - Modifica ambiente shell via source de saída do python
+#   - Exporta múltiplas variáveis de configuração
+#
+# Exemplos:
+#   load_config "unmm.conf" -> carrega unmm.conf
+#   load_config "unmm.conf:override.conf" "General.Output=/custom" -> carrega múltiplos com override
 load_config() {
     local config_files="$1"
     local set_list=("${@:2}")
